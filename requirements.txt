@@ -1,0 +1,31 @@
+# Web framework
+Flask==2.2.2
+Werkzeug==2.2.3
+Jinja2==3.1.2
+itsdangerous==2.1.2
+click==8.1.7
+MarkupSafe==2.1.5
+
+# Image / utilities
+Pillow>=9.4
+qrcode==8.0
+jieba==0.42.1
+PyYAML>=6.0
+six>=1.15
+
+# OCR: official PaddleOCR 3.x (PP-OCRv5 mobile tier), offline, local CPU only.
+# IMPORTANT: pin paddlepaddle==3.2.2. paddlepaddle 3.3.x ships a OneDNN/PIR bug that
+# crashes (NotImplementedError: ConvertPirAttribute2RuntimeAttribute) or silently
+# returns empty output on CPU inference for these models. 3.2.2 is the confirmed
+# working combination with PaddleOCR 3.x. The OCR model auto-downloads on first use.
+paddlepaddle==3.2.2
+paddleocr==3.5.0
+matplotlib
+
+# 代码填空整卷处理（codepaper）：Word 结构化解析 + PDF 文本层/颜色/矢量线
+# 二者为可选依赖，缺失时对应格式会给出明确提示，文本通道仍可用。
+python-docx>=1.1
+PyMuPDF>=1.24
+# 图片视觉层（codepaper/vision.py）用 cv2，由上面的 paddleocr 依赖链提供
+# （opencv-contrib-python），故不重复声明以免版本冲突；cv2 缺失时图片通道
+# 会明确降级为 OCR 文本通道并写入 warnings，不会静默失败。

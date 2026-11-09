@@ -1,0 +1,57 @@
+# ===== 虚拟环境 =====
+.venv/
+.venv_bak/
+env/
+venv/
+
+# ===== Python 缓存 / 字节码 / 打包元数据 =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ===== 运行时数据（数据库 / 日志 / 上传 / 缓存，非源码）=====
+data/
+*.log
+app.log
+server.log
+startup.log
+selftest.*
+
+# ===== 构建产物 =====
+/build_output/
+dist/
+*.exe
+*.spec
+
+# ===== 临时与测试产物 =====
+.tmp/
+.pip-cache/
+.chrome-*/
+pw_*.log
+nul
+
+# ===== 预览截图 / 快捷方式（非源码）=====
+preview*.png
+*.lnk
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+
+# ===== 系统 / 编辑器临时文件 =====
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*~
+.project
+.pydevproject
+
+# ===== WorkBuddy 工作区数据 =====
+/.workbuddy/

@@ -1,0 +1,342 @@
+/* ==================================================================
+   统一下拉控件 / WB Select —— 「暖纸灯下」组件层
+   ------------------------------------------------------------------
+   定调：不新造一套视觉，而是把系统里已经成立的那一套浮层语言
+   （整卷历史 combobox / 标签多选面板 / 暖纸卡片）推广到所有 <select>。
+   记忆点：筛选一旦生效，触发器就染上淡陶色 + 陶红描边；浮层里选中项
+   永远带一枚同色对勾 —— 所有下拉因此一眼同源。
+
+   结构：原生 <select> 不删除，只做视觉隐藏并保留为「值容器」，
+   业务 JS 的 .value / change / options 读写全部照旧。触发器与浮层
+   由 wb-select.js 生成，浮层 portal 到 <body>，用 position:fixed
+   绕开 .library-toolbar 的 overflow 与 .page 的切页 transform。
+
+   本项目只提供浅色「暖纸」主题，故全部颜色取自 app.css 的 :root，
+   组件内不写死主题色；暖褐环境色阴影沿用 .ch-combo-list 的既有配方。
+   ================================================================== */
+
+/* 宿主：顶替原 <select> 在 flex 行 / 表单列里的排版位置 ---------------- */
+.wb-select-host {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+  min-width: 0;
+  max-width: 100%;
+  width: var(--wb-w, auto);
+}
+
+/* 原生 select：保留在 DOM 与表单里，但不占位、不可见、不可点。
+   尺寸量到 1px 并裁掉，避免影响宿主几何，也不触发浏览器原生弹层。 */
+.wb-select-native {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none !important;
+  appearance: none;
+}
+
+/* 触发器：尺寸 / 字号 / 内边距由 JS 从原 select 的计算样式量出来，
+   写成 --wb-* 变量，这样各处上下文（34px 筛选 / 44px 整卷表单 /
+   30px 分页栏）都不跳版，媒体查询也能直接覆盖而不必用 !important。 */
+.wb-select-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--wb-h, 34px);
+  padding: var(--wb-pad, 0 30px 0 10px);
+  border: 1px solid var(--line);
+  border-radius: var(--wb-radius, 8px);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--wb-ff, var(--font));
+  font-size: var(--wb-fs, 11.5px);
+  font-weight: var(--wb-fw, 500);
+  line-height: var(--wb-lh, 1.4);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  appearance: none;
+  outline: none;
+  transition:
+    border-color var(--dur-fast) ease-out,
+    background-color var(--dur-fast) ease-out,
+    box-shadow var(--dur-fast) ease-out,
+    color var(--dur-fast) ease-out;
+}
+.wb-select-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-select-caret {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-top: -6px;
+  color: var(--muted-2);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: rotate(90deg);
+  transition: transform var(--dur-fast) var(--ease-out), color var(--dur-fast) ease-out;
+  pointer-events: none;
+}
+.wb-select-trigger:hover { border-color: var(--line-strong); }
+.wb-select-trigger:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .15);
+}
+.wb-select-trigger[aria-expanded="true"] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .12);
+}
+.wb-select-trigger[aria-expanded="true"] .wb-select-caret {
+  transform: rotate(-90deg);
+  color: var(--primary);
+}
+/* 筛选生效态：与 .tms-trigger.has-filter 同一套语义色 */
+.wb-select-trigger.has-value:not([aria-expanded="true"]) {
+  border-color: var(--primary-soft-strong);
+  background: var(--primary-soft);
+  color: var(--primary-2);
+  font-weight: 650;
+}
+.wb-select-trigger.has-value:not([aria-expanded="true"]) .wb-select-caret { color: var(--primary); }
+.wb-select-trigger:disabled { opacity: .55; cursor: not-allowed; }
+
+/* 浮层：portal 到 body，fixed 定位，避开祖先 overflow / transform ----- */
+.wb-select-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;                 /* 高于 .modal-root(100) 与 .tms-panel(120) */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  min-width: 168px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: 280px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(48, 38, 24, .16);
+  animation: wbSelectIn .16s var(--ease-out);
+}
+@keyframes wbSelectIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wb-select-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.wb-select-search:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(var(--primary-rgb), .1); }
+.wb-select-search svg {
+  width: 14px; height: 14px; flex: none; color: var(--muted-2);
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+}
+.wb-select-search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  font: 500 11.5px/1.4 var(--font); color: var(--ink);
+}
+.wb-select-search input::placeholder { color: var(--muted-2); }
+.wb-select-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 2px;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.wb-select-group {
+  padding: 7px 10px 3px;
+  font: 600 10px/1.3 var(--font);
+  letter-spacing: .06em;
+  color: var(--muted-2);
+}
+.wb-select-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: 500 12.5px/1.4 var(--font);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.wb-select-opt-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-select-check {
+  width: 14px; height: 14px; flex: none; color: var(--primary); opacity: 0;
+  fill: none; stroke: currentColor; stroke-width: 2.4;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.wb-select-opt:hover { background: var(--surface-2); }
+.wb-select-opt.is-cursor { background: var(--surface-2); }
+.wb-select-opt.is-selected {
+  background: rgba(var(--primary-rgb), .12);
+  color: var(--primary);
+  font-weight: 650;
+}
+.wb-select-opt.is-selected .wb-select-check { opacity: 1; }
+.wb-select-opt.is-selected:hover,
+.wb-select-opt.is-selected.is-cursor { background: rgba(var(--primary-rgb), .18); }
+.wb-select-opt.is-disabled { opacity: .45; cursor: not-allowed; }
+.wb-select-opt.is-disabled:hover { background: transparent; }
+.wb-select-empty { padding: 14px 10px; text-align: center; font-size: 12px; color: var(--muted-2); }
+
+/* ------------------------------------------------------------------ */
+/* 上下文适配：让宿主顶替原 select 的 flex / width 角色                  */
+/* ------------------------------------------------------------------ */
+.library-toolbar > .wb-select-host,
+.library-filters > .wb-select-host,
+.filter-row > .wb-select-host,
+.option-group > .wb-select-host,
+.per-page-control > .wb-select-host { flex: 0 0 auto; }
+
+/* 初始处于隐藏页的 select 量不到计算样式，这里按上下文给出尺寸兜底；
+   可见页由组件把原 select 的计算值写成内联 --wb-* 覆盖。 */
+.library-toolbar > .wb-select-host .wb-select-trigger,
+.library-filters > .wb-select-host .wb-select-trigger,
+.filter-row > .wb-select-host .wb-select-trigger,
+.lib-papers-tools .wb-select-host .wb-select-trigger {
+  --wb-h: 34px;
+  --wb-fs: 10.5px;
+  --wb-pad: 0 30px 0 10px;
+  --wb-radius: 8px;
+}
+.field > .wb-select-host .wb-select-trigger,
+.modal-body .field > .wb-select-host .wb-select-trigger {
+  --wb-h: 38px;
+  --wb-fs: 11.5px;
+  --wb-pad: 9px 30px 9px 11px;
+  --wb-radius: 9px;
+}
+.cp-embed .cp-field > .wb-select-host .wb-select-trigger {
+  --wb-h: 44px;
+  --wb-fs: 12.5px;
+  --wb-pad: 9px 30px 9px 12px;
+  --wb-radius: 10px;
+}
+.per-page-control .wb-select-trigger {
+  --wb-h: 34px;
+  --wb-fs: 10.5px;
+  --wb-pad: 0 28px 0 10px;
+}
+.cp-reparse-target > .wb-select-host .wb-select-trigger {
+  --wb-h: 34px;
+  --wb-fs: 12px;
+  --wb-pad: 0 30px 0 11px;
+}
+
+.field > .wb-select-host,
+.cp-embed .cp-field > .wb-select-host,
+.modal-body .field > .wb-select-host { display: flex; width: 100%; }
+
+.cp-reparse-target > .wb-select-host { flex: 1 1 auto; min-width: 0; }
+.cp-reparse-target > .wb-select-host .wb-select-trigger { height: 34px; }
+
+/* 「每页条数」原本就是一层自定义外观 + 透明原生 select；增强后
+   由宿主接管，旧的可见层与边框全部让位给统一触发器。 */
+.per-page-select.wb-select-host {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.per-page-select.wb-select-host > .per-page-value,
+.per-page-select.wb-select-host > .per-page-caret { display: none; }
+.per-page-select.wb-select-host:hover { border-color: transparent; }
+.per-page-select.wb-select-host:focus-within { box-shadow: none; }
+.per-page-select.wb-select-host .wb-select-trigger {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+/* 既有自定义下拉的选中态向新组件看齐：淡陶底 + 同色对勾。
+   只加装饰，不动 ch-combobox / tms 的交互逻辑。 */
+.ch-combo-opt.is-active { display: flex; align-items: center; gap: 8px; }
+.ch-combo-opt.is-active::after {
+  content: "";
+  width: 6px; height: 10px;
+  margin-left: auto; flex: none;
+  border: solid var(--primary);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translateY(-2px);
+}
+
+/* ------------------------------------------------------------------ */
+/* 响应式：复刻 app.css 里原 select 的两列 / 满宽规则，改用宿主选择器    */
+/* ------------------------------------------------------------------ */
+@media (max-width: 680px), (pointer: coarse) {
+  .filter-row > .wb-select-host { flex: 1 1 auto; }
+  .library-filters > .wb-select-host {
+    width: auto;
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+  .library-filters > .wb-select-host .wb-select-trigger {
+    height: 38px;
+    font-size: 16px;            /* 手机端保持 16px 防 iOS 自动缩放 */
+  }
+  .lib-papers-tools > .wb-select-host { flex: 1 1 auto; min-width: 0; }
+  .library-filters .wb-select-host,
+  .lib-papers-tools .wb-select-host { width: auto; }
+}
+@media (max-width: 430px) {
+  .library-filters > .wb-select-host { flex: 1 1 calc(50% - 4px); min-width: 0; }
+}
+@media (max-width: 680px) {
+  .library-filters .wb-select-host { width: auto; }
+}
+
+/* 动效降级：与系统其它组件一致，减少动态偏好下关掉全部过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .wb-select-panel { animation: none; }
+  .wb-select-trigger,
+  .wb-select-trigger .wb-select-caret,
+  .wb-select-opt,
+  .wb-select-check { transition: none; }
+}

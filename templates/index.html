@@ -1,0 +1,1904 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2e251d">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="错题簿">
+  <title>错题簿 · 把错题变成分数</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <!-- 版本号让手机浏览器/主屏幕图标放弃旧样式缓存；服务重启后改用 CSS 文件时间戳自动更新 -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=asset_version|default('20261106q')) }}">
+  <!-- KaTeX：本地化安装，公式渲染完全离线可用。文件名带版本号且不走 asset_version，
+       这样前端发版时浏览器不会反复重下这 300KB 资源。 -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex-0.16.11.min.css') }}">
+  <!-- 整卷入库：作用域限定在 .cp-embed 内，复用 app.css 的「暖纸灯下」令牌 -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/codepaper.css', v=asset_version|default('20261108c')) }}">
+  <!-- 全局统一下拉：放在两个既有样式表之后，便于覆盖各自的原生 select 外观 -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/wb-select.css', v='20261109d') }}">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h5v16H4zM11 4h4v16h-4zM17.5 5l3.5-1 3 14-3.5 1z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4z"/><path d="M12 9v5"/><circle cx="12" cy="17.4" r=".8" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v4h16v-4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10z"/><path d="m13.5 6.5 3.5 3.5"/></symbol>
+    <symbol id="i-comment" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4V16H4z"/><path d="M8 9.5h8M8 12.5h5"/></symbol>
+    <symbol id="i-fix" viewBox="0 0 24 24"><path d="M3.5 8.5h13"/><path d="m13 5 3.5 3.5L13 12"/><path d="M20.5 15.5H7.5"/><path d="m11 12-3.5 3.5L11 19"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 6.5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16"/><path d="m14 6 6 6-6 6"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M20 12H4"/><path d="m10 6-6 6 6 6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4h6a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H4z"/><path d="M20 4h-6a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h6z"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 5 3.2 8.3 7 10 3.8-1.7 7-5 7-10V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5"/><path d="M19 11a7 7 0 1 0 .2 4"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 3-3 4 4"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/><path d="M3 10h18"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-chevrons" viewBox="0 0 24 24"><path d="m11 7-5 5 5 5"/><path d="m18 7-5 5 5 5"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m14 4-4 16"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m15.6 8.4-2 5.2-5.2 2 2-5.2z"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6"/><path d="m6 12 6-6 6 6"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.2 6.2a8.2 8.2 0 1 0 11.6 0"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></symbol>
+  </svg>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><svg><use href="#i-book"></use></svg></div>
+        <div class="brand-text"><strong>错题簿</strong><span>把错题变成分数</span></div>
+      </div>
+
+      <nav class="nav" aria-label="主导航">
+        <button class="nav-item active" data-view="dashboard"><svg><use href="#i-home"></use></svg><span>概览</span></button>
+        <button class="nav-item" data-view="capture"><svg><use href="#i-camera"></use></svg><span>图片识题</span><em class="nav-dot" id="captureDot" hidden></em></button>
+        <button class="nav-item" data-view="codepaper" title="整卷入库：录入卷子与答案 → 存入卷库 → 随时出题开考"><svg><use href="#i-code"></use></svg><span>整卷入库</span></button>
+        <button class="nav-item" data-view="library"><svg><use href="#i-library"></use></svg><span>我的题库</span></button>
+        <button class="nav-item" data-view="practice"><svg><use href="#i-play"></use></svg><span>开始练习</span></button>
+        <button class="nav-item" data-view="wrong"><svg><use href="#i-alert"></use></svg><span>错题本</span><b class="nav-count" id="wrongNavCount" hidden>0</b></button>
+        <button class="nav-item" data-view="stats"><svg><use href="#i-chart"></use></svg><span>学习统计</span></button>
+        <button class="nav-item" data-view="guide"><svg><use href="#i-compass"></use></svg><span>使用手册</span></button>
+        <button class="nav-item nav-dev" data-view="dev"><svg><use href="#i-code"></use></svg><span>系统架构</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="daily-card">
+          <div class="daily-card-head"><svg><use href="#i-spark"></use></svg><span>今日状态</span></div>
+          <strong id="sideTodayText">今天还没练习</strong>
+          <p id="sideTodaySub">从一道错题开始吧</p>
+          <div class="mini-progress"><i id="sideProgress"></i></div>
+        </div>
+        <div class="sidebar-bottom-nav">
+          <button class="nav-item nav-settings" data-view="settings"><svg><use href="#i-settings"></use></svg><span>设置</span></button>
+          <button class="nav-item nav-exit" id="shutdownApp" title="退出程序：关闭本地服务，已保存的数据不会丢失" aria-label="退出程序"><svg><use href="#i-power"></use></svg><span>退出程序</span></button>
+        </div>
+        <!-- 折叠控制键：与菜单同一套视觉语言；展开态带文字，图标态只留双箭头 -->
+        <button class="sidebar-toggle" id="sidebarToggle" type="button"
+                aria-label="折叠侧边栏" aria-expanded="true" title="折叠侧边栏（Ctrl/⌘ + \）"
+                data-label="折叠侧边栏">
+          <span class="sidebar-toggle-label">收起侧栏</span>
+          <svg aria-hidden="true"><use href="#i-chevrons"></use></svg>
+        </button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="heading">
+          <h1 id="pageTitle">概览</h1>
+          <p id="pageSubtitle">把每一道错题，都变成下一次的分数。</p>
+        </div>
+        <span class="sync-badge" id="syncBadge">等待同步</span>
+        <div class="top-actions" id="pageActions"></div>
+      </header>
+
+      <main class="content">
+        <section class="page" data-page="dashboard">
+          <div class="hero">
+            <div class="hero-copy">
+              <span class="eyebrow"><svg><use href="#i-spark"></use></svg> 今日学习</span>
+              <h2>把每一道错题，<br><span>变成下一次的分数。</span></h2>
+              <p>上传图片、自动识别、随机重练。所有数据都留在这台电脑里。</p>
+              <div class="hero-actions">
+                <button class="btn btn-light" data-action="start-practice"><svg><use href="#i-play"></use></svg>开始练习</button>
+                <button class="btn btn-ghost-light" data-action="go-capture"><svg><use href="#i-camera"></use></svg>上传截图</button>
+                <button class="btn btn-ghost-light" type="button" data-view="codepaper" data-cp-open="exam"><svg><use href="#i-code"></use></svg>整卷考试</button>
+              </div>
+            </div>
+            <div class="hero-visual" aria-hidden="true">
+              <div class="orb orb-one"></div>
+              <div class="orb orb-two"></div>
+              <div class="floating-card card-main">
+                <div class="float-top"><span class="float-dot"></span><span>今日正确率</span></div>
+                <strong id="heroAccuracy">--</strong>
+                <div class="float-bar"><i id="heroBar"></i></div>
+                <small id="heroAccuracySub">完成练习后显示</small>
+              </div>
+              <div class="floating-card card-mini">
+                <svg><use href="#i-check"></use></svg>
+                <div><strong id="heroMastered">0</strong><span>题已掌握</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <article class="stat-card">
+              <div class="stat-icon purple"><svg><use href="#i-library"></use></svg></div>
+              <div><span>题库总数</span><strong id="statTotal">0</strong><small id="statTotalSub">道题目</small></div>
+              <button class="icon-btn" data-action="go-library" aria-label="打开题库"><svg><use href="#i-chevron"></use></svg></button>
+            </article>
+            <article class="stat-card">
+              <div class="stat-icon red"><svg><use href="#i-alert"></use></svg></div>
+              <div><span>待攻克错题</span><strong id="statWrong">0</strong><small id="statWrongSub">连续答对 3 次可掌握</small></div>
+              <button class="icon-btn" data-action="go-wrong" aria-label="打开错题本"><svg><use href="#i-chevron"></use></svg></button>
+            </article>
+            <article class="stat-card">
+              <div class="stat-icon green"><svg><use href="#i-check"></use></svg></div>
+              <div><span>已掌握</span><strong id="statMastered">0</strong><small id="statMasteredSub">继续保持</small></div>
+              <button class="icon-btn" data-action="go-stats" aria-label="查看统计"><svg><use href="#i-chevron"></use></svg></button>
+            </article>
+            <article class="stat-card">
+              <div class="stat-icon amber"><svg><use href="#i-chart"></use></svg></div>
+              <div><span>今日正确率</span><strong id="statAccuracy">--</strong><small id="statAccuracySub">还没有练习记录</small></div>
+              <button class="icon-btn" data-action="go-stats" aria-label="查看统计"><svg><use href="#i-chevron"></use></svg></button>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel chart-panel">
+              <div class="panel-head">
+                <div><h3>近 7 天练习</h3><p>答对题数 / 总练习题数</p></div>
+                <span class="soft-badge">每日更新</span>
+              </div>
+              <div class="bar-chart" id="weeklyChart"></div>
+              <div class="chart-legend"><span><i class="legend-correct"></i>答对</span><span><i class="legend-total"></i>练习量</span></div>
+            </article>
+
+            <article class="panel mastery-panel">
+              <div class="panel-head"><div><h3>掌握进度</h3><p>连续答对 3 次即视为掌握</p></div></div>
+              <div class="mastery-wrap">
+                <div class="mastery-ring" id="masteryRing"><div><strong id="masteryPercent">0%</strong><span>掌握率</span></div></div>
+                <div class="mastery-legend">
+                  <div><i class="dot mastered"></i><span>已掌握</span><b id="mLemMastered">0</b></div>
+                  <div><i class="dot learning"></i><span>待巩固</span><b id="mLemWrong">0</b></div>
+                  <div><i class="dot unseen"></i><span>未练习</span><b id="mLemUnseen">0</b></div>
+                </div>
+              </div>
+              <button class="text-btn" data-action="go-wrong">查看错题本 <svg><use href="#i-arrow"></use></svg></button>
+            </article>
+
+            <article class="panel weak-panel">
+              <div class="panel-head">
+                <div><h3>最需要关注的题</h3><p>按错误次数排序</p></div>
+                <button class="text-btn" data-action="start-wrong-practice">错题重练 <svg><use href="#i-arrow"></use></svg></button>
+              </div>
+              <div id="weakList" class="weak-list"></div>
+            </article>
+
+            <article class="panel recent-panel">
+              <div class="panel-head"><div><h3>最近练习</h3><p>你的每一次进步都有记录</p></div></div>
+              <div id="recentList" class="recent-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="page" data-page="capture" hidden>
+          <div class="capture-layout">
+            <!-- 工作台眉批：三条要点常驻可扫读，展开才看详细说明；不做成卡片 -->
+            <div class="capture-topbar">
+              <details class="capture-tips" id="captureTips">
+                <summary>
+                  <span class="tips-label"><svg><use href="#i-spark"></use></svg>识别小技巧</span>
+                  <span class="tips-ruler">
+                    <span><i>01</i>题干与选项拍全</span>
+                    <span><i>02</i>一图一题最稳</span>
+                    <span><i>03</i>识别后可再改</span>
+                  </span>
+                  <span class="tips-more">技巧详情</span>
+                </summary>
+                <div class="tips-detail">
+                  <ol class="tip-list">
+                    <li><span>01</span><p><strong>把题目拍完整</strong>截图尽量包含完整题干、选项和正确答案，边缘别被裁掉。</p></li>
+                    <li><span>02</span><p><strong>一张图一道题</strong>单题截图识别最稳定；多题连拍也能自动拆分，之后可逐条核对。</p></li>
+                    <li><span>03</span><p><strong>先改后入库</strong>识别结果可以直接修改，配合右侧纠错词典，确认无误再加入题库。</p></li>
+                  </ol>
+                </div>
+              </details>
+            </div>
+
+            <div class="panel capture-panel" id="capturePanel">
+              <div class="capture-panel-head">
+                <strong><svg><use href="#i-image"></use></svg>上传截图</strong>
+                <button class="text-btn" id="toggleUpload" type="button">收起</button>
+              </div>
+              <div class="capture-panel-body" id="capturePanelBody">
+                <div class="dropzone" id="dropzone" role="group" aria-label="上传错题截图：可拖入文件或粘贴，也可以点「选择图片」从电脑中挑选">
+                  <div class="dropzone-main">
+                    <div class="dropzone-art">
+                      <div class="scan-line"></div>
+                      <svg><use href="#i-image"></use></svg>
+                      <span class="spark spark-a"></span><span class="spark spark-b"></span>
+                    </div>
+                    <div class="dropzone-copy">
+                      <h2>拖入截图，或直接粘贴</h2>
+                      <p>支持 PNG / JPG / WebP，可一次选择多张截图</p>
+                    </div>
+                    <div class="dropzone-actions">
+                      <button class="btn btn-primary" id="pickImages" type="button"><svg><use href="#i-upload"></use></svg>选择图片</button>
+                      <button class="btn btn-primary phone-only" id="takePhoto" type="button"><svg><use href="#i-camera"></use></svg>拍照识题</button>
+                      <span class="paste-hint"><kbd>Ctrl</kbd> + <kbd>V</kbd> 粘贴截图</span>
+                    </div>
+                  </div>
+
+                  <div class="queue-head" id="queueHead" hidden>
+                    <div><strong>待识别图片</strong><span id="queueMeta">0 张</span><span class="queue-hint hover-hint">鼠标悬停预览，点击查看大图</span><span class="queue-hint touch-hint">点击缩略图查看大图</span></div>
+                    <button class="text-btn danger" id="clearQueue" type="button">清空</button>
+                  </div>
+                  <div class="preview-strip" id="previewStrip" hidden></div>
+
+                  <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/bmp" multiple hidden>
+                  <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+                </div>
+
+                <div class="ocr-bar">
+                  <div class="ocr-bar-meta">
+                    <div class="ocr-status" id="ocrStatus"><span class="status-dot"></span>识别引擎已就绪</div>
+                    <!-- 安心提示退回为状态行脚注，不再是顶部独立徽章 -->
+                    <p class="local-note" title="图片、OCR 识别与题库全部保存在本机，不会上传到任何云端">
+                      <svg><use href="#i-shield"></use></svg><b>完全本地运行</b>图片与题库只存本机，不上传云端
+                    </p>
+                    <button class="btn btn-ghost btn-sm" id="viewUploads" type="button" title="查看尚未生成题目的上传图片"><svg><use href="#i-image"></use></svg>已上传图片</button>
+                    <button class="btn btn-ghost btn-sm" id="viewQuestionImages" type="button" title="查看已生成题目的原图（单独存放在 question_images 目录）"><svg><use href="#i-folder"></use></svg>题目原图</button>
+                  </div>
+                  <button class="btn btn-primary" id="startOcr" disabled><svg><use href="#i-spark"></use></svg><span>开始识别</span></button>
+                </div>
+                <div class="ocr-progress" id="ocrProgress" hidden>
+                  <div class="progress-track"><i id="ocrProgressBar"></i></div>
+                  <p id="ocrProgressText">正在读取图片...</p>
+                </div>
+              </div>
+            </div>
+
+            <details class="panel side-collapse has-badge capture-mobile" id="mobileCard" open>
+              <summary><svg><use href="#i-camera"></use></svg><span>手机拍照</span><span class="mobile-live" id="mobileStatus"><i></i>检测中</span></summary>
+              <div class="side-collapse-body">
+                <div class="mobile-qr-wrap">
+                  <img id="mobileQr" alt="手机拍照二维码" hidden>
+                  <div class="mobile-qr-placeholder" id="mobileQrPlaceholder">
+                    <svg><use href="#i-camera"></use></svg>
+                    <span>正在获取地址...</span>
+                  </div>
+                </div>
+                <p class="mobile-url" id="mobileUrl">正在检测局域网地址...</p>
+                <div class="mobile-actions">
+                  <button class="btn btn-ghost btn-sm" id="copyMobileUrl" disabled>复制链接</button>
+                  <span class="mobile-pending" id="mobilePending"></span>
+                </div>
+                <p class="mobile-note">手机与电脑连接同一个 Wi-Fi，扫码后可直接调用手机摄像头。照片会出现在待识别列表。</p>
+                <button class="mobile-help" id="mobileHelp" type="button">扫码打不开？查看排查方法</button>
+                <div class="mobile-direct phone-only">
+                  <button class="btn btn-primary btn-block" id="takePhotoDirect" type="button"><svg><use href="#i-camera"></use></svg>拍照并识别</button>
+                  <p>当前就在手机浏览器中，拍照后会加入上方「待识别图片」，点「开始识别」即可。</p>
+                </div>
+              </div>
+            </details>
+
+            <div class="ocr-raw" id="ocrRaw" hidden>
+              <details>
+                <summary>查看 OCR 原文</summary>
+                <div id="ocrRawContent"></div>
+              </details>
+            </div>
+
+            <aside class="capture-side">
+              <article class="panel correct-card">
+                <div class="correct-head">
+                  <div class="tip-icon"><svg><use href="#i-fix"></use></svg></div>
+                  <div><h3>OCR 纠错词典</h3><p>随加随用，识别时自动参照</p></div>
+                  <button class="icon-btn correct-toggle" id="toggleCorrect" type="button" title="收起 / 展开词典" aria-expanded="true"><svg><use href="#i-chevron"></use></svg></button>
+                </div>
+                <div class="correct-body" id="correctBody">
+                  <div class="correct-form">
+                    <div class="field"><label>误识文本</label><input id="correctionWrong" placeholder="如：数居" maxlength="200"></div>
+                    <div class="field"><label>正确文本</label><input id="correctionRight" placeholder="如：数据" maxlength="200"></div>
+                    <button class="btn btn-primary btn-sm btn-block" id="addCorrection" type="button"><svg><use href="#i-plus"></use></svg>加入词典</button>
+                  </div>
+                  <div class="correct-list" id="correctionList"></div>
+                  <p class="correct-empty" id="correctionEmpty">词典为空，已内置常用纠错；识别后可在题目卡上点“纠错”快速添加。</p>
+                  <p class="correct-tip">识别结果里发现错字？点题目卡右上角的橙色<b>纠错</b>按钮即可当场改正并写入词典。</p>
+                </div>
+              </article>
+            </aside>
+
+            <div class="draft-area" id="draftArea" hidden>
+              <div class="dup-banner" id="dupBanner" hidden>
+                <div class="dup-banner-icon"><svg><use href="#i-alert"></use></svg></div>
+                <div class="dup-banner-body">
+                  <strong id="dupBannerTitle">检测到重复图片</strong>
+                  <p id="dupBannerText"></p>
+                </div>
+                <div class="dup-banner-actions">
+                  <button class="btn btn-ghost btn-sm" id="dupDeleteAll" type="button"><svg><use href="#i-trash"></use></svg>全部删除</button>
+                  <button class="btn btn-ghost btn-sm" id="dupDismiss" type="button">忽略</button>
+                </div>
+              </div>
+              <div class="section-head">
+                <div><h2>识别结果</h2><p id="draftMeta">确认题目内容，修改后加入题库。</p></div>
+                <div class="section-actions">
+                  <button class="btn btn-ghost" id="discardDrafts">放弃</button>
+                  <button class="btn btn-primary" id="saveDrafts"><svg><use href="#i-check"></use></svg>全部加入题库</button>
+                </div>
+              </div>
+              <div class="ai-busy" id="aiBusy" hidden></div>
+              <div id="draftList" class="draft-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" data-page="library" data-lib-tab="papers" hidden>
+          <!-- 手机端专属：默认只展示「整卷考试 / 单题题库」两个入口，点选后下钻到对应区块 -->
+          <div class="libm-home" id="libMobileHome">
+            <div class="libm-home-inner">
+              <p class="libm-home-hint">选择要查看的内容</p>
+              <button class="libm-card" type="button" data-libm-enter="papers">
+                <span class="libm-card-ico brown"><svg><use href="#i-code"></use></svg></span>
+                <span class="libm-card-body">
+                  <strong>整卷考试</strong>
+                  <span class="libm-card-sub"><b id="libmCountPapers">0</b> 份试卷 · 内含代码填空题，可开考或复习</span>
+                </span>
+                <svg class="libm-card-go" aria-hidden="true"><use href="#i-arrow"></use></svg>
+              </button>
+              <button class="libm-card" type="button" data-libm-enter="questions">
+                <span class="libm-card-ico amber"><svg><use href="#i-library"></use></svg></span>
+                <span class="libm-card-body">
+                  <strong>单题题库</strong>
+                  <span class="libm-card-sub"><b id="libmCountQuestions">0</b> 道题目 · 支持搜索与筛选</span>
+                </span>
+                <svg class="libm-card-go" aria-hidden="true"><use href="#i-arrow"></use></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- 手机端下钻后的返回条：回到两个入口的首页 -->
+          <button class="libm-back" id="libMobileBack" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+            <span class="libm-back-label">整卷考试</span>
+          </button>
+
+          <!-- 桌面端子菜单：整卷考试 / 单题题库 分页切换，一次只看一类，缓解拥挤 -->
+          <div class="lib-tabs" id="libTabs" role="tablist" aria-label="题库子菜单">
+            <button class="lib-tab is-active" type="button" role="tab" id="libTabPapers" data-lib-tab="papers" aria-selected="true">
+              <svg><use href="#i-code"></use></svg>整卷考试
+            </button>
+            <button class="lib-tab" type="button" role="tab" id="libTabQuestions" data-lib-tab="questions" aria-selected="false">
+              <svg><use href="#i-library"></use></svg>单题题库
+            </button>
+          </div>
+
+          <!-- 整卷考试：风格完全照搬「单题题库」——同样的工具栏 / 卡片 / 分页栏，不再限制显示条数 -->
+          <section class="lib-papers" id="libPapers" aria-labelledby="libPapersTitle">
+            <section class="lib-questions-head" aria-labelledby="libPapersTitle">
+              <div class="lib-questions-title">
+                <span class="eyebrow dark"><svg><use href="#i-code"></use></svg> 整卷考试</span>
+                <h3 id="libPapersTitle">整卷练习 <b id="libPapersCount">0</b> 份</h3>
+              </div>
+            </section>
+            <div class="library-toolbar panel" id="libPaperToolbar">
+              <div class="library-search-row">
+                <!-- 与「整卷历史」同款组合框：键入即模糊筛选，下拉可直接点选具体卷 -->
+                <div class="ch-combobox" id="libPaperCombobox">
+                  <span class="search-box ch-search" role="combobox" aria-expanded="false" aria-haspopup="listbox" aria-owns="libPaperComboList" id="libPaperComboToggle">
+                    <svg><use href="#i-search"></use></svg>
+                    <input id="libPaperSearch" type="text" placeholder="搜索试卷名称，带下拉模糊筛选…" autocomplete="off" spellcheck="false" aria-label="搜索并筛选整卷" aria-controls="libPaperComboList">
+                    <button type="button" class="ch-combo-clear" id="libPaperComboClear" aria-label="清除筛选" title="清除筛选" hidden>×</button>
+                    <svg class="ch-combo-caret" aria-hidden="true"><use href="#i-chevron"></use></svg>
+                  </span>
+                  <ul class="ch-combo-list" id="libPaperComboList" role="listbox" hidden></ul>
+                </div>
+              </div>
+              <!-- 筛选条件与单题题库一致：默认常显、内联平铺，不收进折叠面板 -->
+              <div class="library-filters" id="libPaperFilters">
+                <select id="libPaperState" aria-label="整卷状态筛选">
+                  <option value="">全部状态</option>
+                  <option value="idle">尚未开考</option>
+                  <option value="bad">待攻克</option>
+                  <option value="ok">已攻克</option>
+                </select>
+              </div>
+            </div>
+            <div class="question-list" id="libPaperList"></div>
+            <div class="lib-papers-empty" id="libPapersEmpty" hidden>
+              <p>还没有整卷。点顶部「整卷考试」进整卷入库，录一份空白卷和答案参考，就会以一行出现在这里。</p>
+            </div>
+            <!-- 分页栏：与单题题库同构（每页条数 / 翻页 / 总数），不再限制单页显示条数 -->
+            <div class="pager-bar" id="libPaperPagerBar">
+              <div class="per-page-control">
+                <label for="libPaperPerPage" class="per-page-label">每页</label>
+                <span class="per-page-select">
+                  <span class="per-page-value" id="libPaperPerPageValue" aria-hidden="true">10 条</span>
+                  <svg class="per-page-caret" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+                  <select id="libPaperPerPage" aria-label="每页显示条数">
+                    <option value="8">8 条</option>
+                    <option value="10" selected>10 条</option>
+                    <option value="15">15 条</option>
+                    <option value="20">20 条</option>
+                    <option value="30">30 条</option>
+                    <option value="all">全部</option>
+                  </select>
+                </span>
+              </div>
+              <div id="libPaperPager" class="pager"></div>
+              <span id="libPaperSummary" class="pager-summary">共 0 份</span>
+            </div>
+          </section>
+          <section class="lib-questions-head" aria-labelledby="libQuestionsTitle">
+            <div class="lib-questions-title">
+              <span class="eyebrow dark"><svg><use href="#i-library"></use></svg> 单题题库</span>
+              <h3 id="libQuestionsTitle">题库题目 <b id="libQuestionsCount">0</b> 题</h3>
+            </div>
+          </section>
+          <div class="library-toolbar panel">
+            <div class="library-search-row">
+              <label class="search-box">
+                <svg><use href="#i-search"></use></svg>
+                <input id="libSearch" type="search" placeholder="搜索题干、编号或标签..." autocomplete="off">
+              </label>
+              <button class="filter-toggle" id="libFilterToggle" type="button" aria-controls="libFilters" aria-expanded="false" title="展开筛选条件">
+                <svg><use href="#i-filter"></use></svg>筛选<span class="filter-count" id="libFilterCount" hidden>0</span>
+              </button>
+            </div>
+            <div class="library-filters" id="libFilters">
+              <select id="libType" aria-label="题型筛选">
+                <option value="">全部题型</option>
+                <option value="single">单选题</option>
+                <option value="multiple">多选题</option>
+                <option value="truefalse">判断题</option>
+                <option value="fill">填空题</option>
+              </select>
+              <select id="libStatus" aria-label="状态筛选">
+                <option value="">全部状态</option>
+                <option value="wrong">待攻克</option>
+                <option value="mastered">已掌握</option>
+                <option value="new">未练习</option>
+              </select>
+              <div class="tag-multiselect" id="libTagSelect">
+                <button type="button" class="tms-trigger" id="libTagTrigger" aria-haspopup="listbox" aria-expanded="false" aria-label="标签筛选">
+                  <span class="tms-label" id="libTagLabel">全部标签</span>
+                  <span class="tms-badge" id="libTagBadge" hidden>0</span>
+                  <svg class="tms-caret" aria-hidden="true"><use href="#i-chevron"></use></svg>
+                </button>
+                <div class="tms-backdrop" id="libTagBackdrop" hidden></div>
+                <div class="tms-panel" id="libTagPanel" role="dialog" aria-label="按标签筛选（可多选）" hidden>
+                  <div class="tms-sheet-head">
+                    <span class="tms-grabber" aria-hidden="true"></span>
+                    <span class="tms-sheet-title">选择标签</span>
+                    <button type="button" class="tms-sheet-close" id="libTagClose" aria-label="收起标签筛选">
+                      <svg aria-hidden="true"><use href="#i-close"></use></svg>
+                    </button>
+                  </div>
+                  <div class="tms-search">
+                    <svg aria-hidden="true"><use href="#i-search"></use></svg>
+                    <input type="search" id="libTagSearch" placeholder="搜索标签…" autocomplete="off" aria-label="搜索标签">
+                  </div>
+                  <div class="tms-chips" id="libTagChips" hidden></div>
+                  <div class="tms-list" id="libTagList" role="listbox" aria-multiselectable="true"></div>
+                  <div class="tms-footer">
+                    <button type="button" class="text-btn" id="libTagClear">清空</button>
+                    <span class="tms-info" id="libTagInfo"></span>
+                    <button type="button" class="tms-done" id="libTagDone">完成</button>
+                  </div>
+                </div>
+              </div>
+              <select id="libSort" aria-label="排序">
+                <option value="recent">最近添加</option>
+                <option value="wrong">错误最多</option>
+                <option value="mastery">掌握度最低</option>
+                <option value="oldest">最早添加</option>
+              </select>
+              <select id="libSearchScope" aria-label="搜索范围" title="搜索范围：默认只匹配题干、编号、标签；切到「含选项解析」会同时搜索选项、解析与原图 OCR 文字，并在结果中标出命中位置">
+                <option value="stem">仅题干</option>
+                <option value="all">含选项解析</option>
+              </select>
+            </div>
+          </div>
+          <div class="list-meta" id="libListMeta" hidden>
+            <span id="libScrollHint" class="scroll-hint" hidden></span>
+          </div>
+          <div id="questionList" class="question-list"></div>
+          <div class="pager-bar" id="libQuestionsPagerBar">
+            <div class="per-page-control">
+              <label for="libPerPage" class="per-page-label">每页</label>
+              <!-- 原生 select 透明覆盖：手机端会被全局规则强制 16px 防缩放，
+                   视觉层用统一字号显示，既不被放大也不被原生箭头遮挡 -->
+              <span class="per-page-select">
+                <span class="per-page-value" id="libPerPageValue" aria-hidden="true">自适应</span>
+                <svg class="per-page-caret" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+                <select id="libPerPage" aria-label="每页显示条数">
+                  <option value="auto">自适应</option>
+                  <option value="5">5 条</option>
+                  <option value="8">8 条</option>
+                  <option value="10">10 条</option>
+                  <option value="15">15 条</option>
+                  <option value="20">20 条</option>
+                  <option value="30">30 条</option>
+                  <option value="50">50 条</option>
+                  <option value="custom">自定义…</option>
+                </select>
+              </span>
+              <label class="per-page-custom" id="libPerPageCustom" hidden title="输入 1 - 100，超出一屏可用滚动条查看">
+                <input id="libPerPageInput" type="number" min="1" max="100" step="1" value="12" inputmode="numeric" aria-label="自定义每页条数">
+                <span>条</span>
+              </label>
+            </div>
+            <div id="libPager" class="pager"></div>
+            <span id="libSummary" class="pager-summary">正在加载...</span>
+          </div>
+        </section>
+
+        <section class="page" data-page="practice" hidden>
+          <div id="practiceSetup">
+            <div class="practice-intro">
+              <div>
+                <span class="eyebrow dark"><svg><use href="#i-play"></use></svg> 练习模式</span>
+                <h2>今天，想怎么练？</h2>
+                <p>自动判分、即时解析，答错的题会自动进入错题本。</p>
+              </div>
+              <div class="practice-badge"><strong id="practiceReadyCount">0</strong><span>道题可练习</span></div>
+            </div>
+
+            <div class="mode-grid">
+              <button class="mode-card{% if practice_counts.wrong %} active{% endif %}" data-mode="wrong">
+                <span class="mode-icon red"><svg><use href="#i-alert"></use></svg></span>
+                <strong>错题重练</strong>
+                <p>从待攻克的错题中随机抽取，连续答对 3 次即可掌握。</p>
+                <span class="mode-count" data-count-for="wrong"></span>
+                <em class="mode-badge"{% if not practice_counts.wrong %} hidden{% endif %}>推荐</em>
+              </button>
+              <button class="mode-card{% if not practice_counts.wrong %} active{% endif %}" data-mode="random">
+                <span class="mode-icon purple"><svg><use href="#i-refresh"></use></svg></span>
+                <strong>随机练习</strong>
+                <p>从全部题库中随机抽题，保持手感，查漏补缺。</p>
+                <span class="mode-count" data-count-for="random"></span>
+                <em class="mode-badge"{% if practice_counts.wrong %} hidden{% endif %}>推荐</em>
+              </button>
+              <button class="mode-card" data-mode="unseen">
+                <span class="mode-icon green"><svg><use href="#i-spark"></use></svg></span>
+                <strong>新题练习</strong>
+                <p>只练还没有做过的题，快速完成第一次筛查。</p>
+                <span class="mode-count" data-count-for="unseen"></span>
+                <em class="mode-badge" hidden>推荐</em>
+              </button>
+              <button class="mode-card" data-mode="tag">
+                <span class="mode-icon amber"><svg><use href="#i-filter"></use></svg></span>
+                <strong>按标签练习</strong>
+                <p>指定一个知识标签，集中攻克薄弱模块。</p>
+                <span class="mode-count" data-count-for="tag"></span>
+                <em class="mode-badge" hidden>推荐</em>
+              </button>
+              <button class="mode-card" data-mode="paper-random">
+                <span class="mode-icon blue"><svg><use href="#i-code"></use></svg></span>
+                <strong>随机练习试卷</strong>
+                <p>从整卷库里随机抽一份代码填空卷，直接进考场开考。</p>
+                <span class="mode-count" data-count-for="paper-random"></span>
+                <em class="mode-badge" hidden>随机</em>
+              </button>
+            </div>
+
+            <div class="practice-options panel">
+              <div class="option-group">
+                <label>练习数量</label>
+                <div class="segmented" id="countSegmented">
+                  <button data-count="5">5 题</button>
+                  <button data-count="10" class="active">10 题</button>
+                  <button data-count="20">20 题</button>
+                  <button data-count="50">50 题</button>
+                  <button data-count="0">全部</button>
+                </div>
+              </div>
+              <div class="option-group" id="tagOptionGroup" hidden>
+                <label>选择标签</label>
+                <select id="practiceTag"><option value="">请选择标签</option></select>
+              </div>
+              <div class="practice-option-foot">
+                <span><svg><use href="#i-clock"></use></svg>预计 <b id="practiceEstimate">5</b> 分钟</span>
+                <button class="btn btn-primary btn-lg" id="startPractice"><svg><use href="#i-play"></use></svg>开始练习</button>
+              </div>
+            </div>
+            <!-- 规则说明属于练习场景，不再是「设置」里的一项配置 -->
+            <details class="practice-rules panel">
+              <summary>
+                <span class="practice-rules-icon"><svg><use href="#i-clock"></use></svg></span>
+                <span class="practice-rules-copy"><strong>判分与掌握度规则</strong><small>答题前可先了解，默认收起不占篇幅</small></span>
+                <em class="practice-rules-more" aria-hidden="true"></em>
+              </summary>
+              <div class="rule-list">
+                <div><span>01</span><p>单选题、多选题、判断题、填空题均支持自动判分。</p></div>
+                <div><span>02</span><p>答错自动进入错题本，答对连续 3 次标记为已掌握。</p></div>
+                <div><span>03</span><p>填空题支持多个可接受答案，用 <code>||</code> 分隔。</p></div>
+              </div>
+            </details>
+          </div>
+
+          <div id="quizPanel" hidden>
+            <div class="quiz-top">
+              <div class="quiz-progress-wrap">
+                <div class="quiz-progress-label"><span>第 <b id="quizIndex">1</b> / <b id="quizTotal">10</b> 题</span><span id="quizScore">已答对 0 题</span></div>
+                <div class="progress-track"><i id="quizProgress"></i></div>
+              </div>
+              <div class="quiz-timer"><svg><use href="#i-clock"></use></svg><span id="quizTimer">00:00</span></div>
+              <button class="icon-btn" id="exitQuiz" title="退出练习"><svg><use href="#i-close"></use></svg></button>
+            </div>
+            <article class="quiz-card panel">
+              <div class="quiz-card-head">
+                <div class="quiz-badges" id="quizBadges"></div>
+                <div class="quiz-card-actions">
+                  <button class="quiz-edit-btn" id="editCurrentQuestion" type="button" title="题干或选项有误？直接修改本题，保存后立即生效">
+                    <svg><use href="#i-edit"></use></svg><span class="btn-label">编辑本题</span><span class="btn-label-short">编辑</span>
+                  </button>
+                </div>
+              </div>
+              <h2 class="quiz-stem" id="quizStem"></h2>
+              <div class="quiz-options" id="quizOptions"></div>
+              <div class="fill-answer" id="fillAnswer" hidden>
+                <label for="fillInput">你的答案</label>
+                <input id="fillInput" type="text" placeholder="输入答案，多个答案用 || 分隔" autocomplete="off">
+              </div>
+              <div class="quiz-feedback" id="quizFeedback" hidden></div>
+              <div class="quiz-footer">
+                <span class="keyboard-hint" id="keyboardHint">按 A / B / C / D 选择，Enter 提交</span>
+                <button class="btn btn-primary btn-lg" id="submitAnswer">提交答案</button>
+                <button class="btn btn-primary btn-lg" id="nextQuestion" hidden>下一题 <svg><use href="#i-arrow"></use></svg></button>
+              </div>
+            </article>
+          </div>
+
+          <div id="resultPanel" hidden>
+            <div class="result-card panel">
+              <span class="eyebrow dark"><svg><use href="#i-spark"></use></svg> 练习完成</span>
+              <div class="result-main">
+                <div class="score-ring" id="scoreRing"><div><strong id="resultScore">0</strong><span>分</span></div></div>
+                <div class="result-copy">
+                  <h2 id="resultTitle">继续加油</h2>
+                  <p id="resultSubtitle">每一次练习，都是在为下一次考试铺路。</p>
+                  <div class="result-stats">
+                    <div><strong id="resultCorrect">0</strong><span>答对</span></div>
+                    <div><strong id="resultWrong">0</strong><span>答错</span></div>
+                    <div><strong id="resultTime">0:00</strong><span>用时</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="result-actions">
+                <button class="btn btn-primary" id="retryWrong" hidden><svg><use href="#i-refresh"></use></svg>重练错题</button>
+                <button class="btn btn-ghost" id="backToSetup">返回练习模式</button>
+                <button class="btn btn-ghost" id="viewWrongBook">打开错题本</button>
+              </div>
+            </div>
+            <div class="result-review panel" id="resultReview"></div>
+          </div>
+        </section>
+
+        <!-- 错题本：拆成「单题错题 / 整卷错题」两页，用子菜单切换，
+             与「我的题库」的整卷考试 / 单题题库 同构，风格保持一致。
+             data-wrong-tab 标记当前页，便于 CSS 区分两页样式。 -->
+        <section class="page" data-page="wrong" data-wrong-tab="single" hidden>
+          <div class="wrong-hero">
+            <div>
+              <span class="eyebrow dark"><svg><use href="#i-alert"></use></svg> 错题本</span>
+              <h2>错误，是尚未掌握的知识。</h2>
+              <p>单题连续答对 3 次自动「已掌握」；整卷按整组计算，两个维度分开攻克、互不干扰。</p>
+            </div>
+            <div class="wrong-hero-actions">
+              <button class="btn btn-primary btn-lg" data-action="start-wrong-practice"><svg><use href="#i-play"></use></svg>开始错题重练</button>
+            </div>
+          </div>
+
+          <!-- 子菜单：单题错题 / 整卷错题 两页切换 -->
+          <div class="wrong-tabs" role="tablist" aria-label="错题本子菜单">
+            <button class="wrong-tab is-active" type="button" role="tab" data-wrong-tab="single" aria-selected="true">
+              <svg><use href="#i-library"></use></svg>单题错题
+              <span class="wrong-tab-count" id="wrongTabCountSingle">0</span>
+            </button>
+            <button class="wrong-tab" type="button" role="tab" data-wrong-tab="paper" aria-selected="false">
+              <svg><use href="#i-code"></use></svg>整卷错题
+              <span class="wrong-tab-count" id="wrongTabCountPaper">0</span>
+            </button>
+          </div>
+
+          <!-- 单题错题页 -->
+          <div class="wrong-panel" id="wrongSinglePanel" data-wrong-panel="single">
+            <div class="stat-grid compact">
+              <article class="stat-card"><div class="stat-icon red"><svg><use href="#i-alert"></use></svg></div><div><span>待攻克</span><strong id="wrongStatWrong">0</strong><small>道错题</small></div></article>
+              <article class="stat-card"><div class="stat-icon green"><svg><use href="#i-check"></use></svg></div><div><span>已掌握</span><strong id="wrongStatMastered">0</strong><small>道题目</small></div></article>
+              <article class="stat-card"><div class="stat-icon amber"><svg><use href="#i-refresh"></use></svg></div><div><span>累计答错</span><strong id="wrongStatCount">0</strong><small>次记录</small></div></article>
+            </div>
+            <div class="list-meta">
+              <span id="wrongSummary">正在加载...</span>
+              <div class="filter-row">
+                <select id="wrongSort" aria-label="错题排序">
+                  <option value="wrong">错误最多</option>
+                  <option value="recent">最近添加</option>
+                  <option value="mastery">掌握度最低</option>
+                </select>
+              </div>
+            </div>
+            <div id="wrongList" class="question-list"></div>
+          </div>
+
+          <!-- 整卷错题页：一份卷 = 一组有关联的填空题，绝不拆成单题。
+               有任意一空错整组留下，全卷全对整组移出。 -->
+          <div class="wrong-panel" id="wrongPaperPanel" data-wrong-panel="paper" hidden>
+            <section class="wb-groups" id="wbGroups" aria-labelledby="wbGroupsTitle">
+              <div class="wb-groups-head">
+                <div class="wb-groups-copy">
+                  <span class="wb-groups-kicker"><svg><use href="#i-code"></use></svg> 整卷错题专区</span>
+                  <h3 id="wbGroupsTitle">整卷待攻克 <b id="wbGroupsCount">0</b> 组</h3>
+                  <p>一份卷是一组互相关联的填空，<b>不拆成单题</b>。有一个空错，整卷留在错题本；全卷全对，整卷才整组移出。</p>
+                </div>
+                <span class="wb-groups-seal" aria-hidden="true">整卷<br>一组</span>
+              </div>
+              <div class="wb-groups-list" id="wbGroupsList"></div>
+              <div class="wb-groups-clear" id="wbGroupsEmpty" hidden>
+                <span class="wb-groups-clear-mark" aria-hidden="true">✓</span>
+                <p><b>整卷全清。</b><span id="wbGroupsEmptyText">目前没有待攻克的整卷组。</span></p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" data-page="stats" hidden>
+          <!-- 单题题目分类：含指标卡、趋势、最易错等单题维度统计 -->
+          <div class="stats-cat">
+            <header class="stats-cat-head">
+              <span class="eyebrow dark"><svg><use href="#i-library"></use></svg> 单题题目分类</span>
+              <h3>单题练习统计</h3>
+              <p>每道题的练习量、正确率与最易错点</p>
+            </header>
+
+            <div class="stat-grid compact">
+              <article class="stat-card"><div class="stat-icon purple"><svg><use href="#i-chart"></use></svg></div><div><span>累计练习</span><strong id="statsAttempts">0</strong><small>次作答</small></div></article>
+              <article class="stat-card"><div class="stat-icon green"><svg><use href="#i-check"></use></svg></div><div><span>整体正确率</span><strong id="statsAccuracy">--</strong><small>基于有效练习</small></div></article>
+              <article class="stat-card"><div class="stat-icon amber"><svg><use href="#i-clock"></use></svg></div><div><span>今日练习</span><strong id="statsToday">0</strong><small>道题</small></div></article>
+              <article class="stat-card"><div class="stat-icon red"><svg><use href="#i-alert"></use></svg></div><div><span>待攻克</span><strong id="statsWrong">0</strong><small>道错题</small></div></article>
+            </div>
+
+            <div class="stats-grid">
+              <article class="panel chart-panel wide">
+                <div class="panel-head"><div><h3>近 14 天学习趋势</h3><p>练习量与正确率</p></div><span class="soft-badge">最近两周</span></div>
+                <div class="line-chart" id="statsChart"></div>
+              </article>
+              <article class="panel">
+                <div class="panel-head"><div><h3>最易错题目</h3><p>优先复习这些题</p></div></div>
+                <div class="hardest-list" id="hardestList"></div>
+              </article>
+              <article class="panel stat-tag-panel">
+                <div class="panel-head"><div><h3>知识标签表现</h3><p>按题目数量排序</p></div></div>
+                <div class="tag-stats" id="tagStats"></div>
+              </article>
+            </div>
+          </div>
+
+          <!-- 整卷考试：整条统计线移到最后，与单题分类明显分开，且与单题统计同款样式 -->
+          <div class="stats-cat">
+            <header class="stats-cat-head">
+              <span class="eyebrow dark"><svg><use href="#i-code"></use></svg> 整卷考试</span>
+              <h3>整卷考试统计</h3>
+              <p>整卷入库、开考与成绩的汇总，不与单题统计混算</p>
+            </header>
+
+            <div class="stat-papers-grid">
+              <article class="stat-card"><div class="stat-icon purple"><svg><use href="#i-code"></use></svg></div><div><span>整卷数量</span><strong id="paperTotal">0</strong><small>份已入库</small></div></article>
+              <article class="stat-card"><div class="stat-icon amber"><svg><use href="#i-play"></use></svg></div><div><span>考试次数</span><strong id="paperExams">0</strong><small>次开考</small></div></article>
+              <article class="stat-card"><div class="stat-icon green"><svg><use href="#i-check"></use></svg></div><div><span>平均最好分</span><strong id="paperAvg">0</strong><small>满分 100</small></div></article>
+              <article class="stat-card"><div class="stat-icon red"><svg><use href="#i-alert"></use></svg></div><div><span>待攻克卷</span><strong id="paperPending">0</strong><small>整卷组</small></div></article>
+            </div>
+            <div class="panel stat-papers-recent">
+              <div class="panel-head"><div><h3>最近考试</h3><p>整卷交卷记录</p></div></div>
+              <div class="paper-recent-list" id="paperRecent"></div>
+            </div>
+            <div class="panel stat-papers-by">
+              <div class="panel-head"><div><h3>每份试卷的刷题 / 考试次数</h3><p>按总次数排序，点击「历史」可查看明细</p></div></div>
+              <div class="paper-by-table" id="paperByTable"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" data-page="codeHistory" hidden>
+          <header class="stats-cat-head ch-head">
+            <button class="btn-back" type="button" data-action="code-history-back" aria-label="返回上一页">
+              <svg><use href="#i-arrow-left"></use></svg> 返回<span id="chBackLabel"></span>
+            </button>
+            <div class="ch-head-main">
+              <span class="eyebrow dark"><svg><use href="#i-history"></use></svg> 整卷历史</span>
+              <h3>整卷刷题与考试记录</h3>
+              <p>所有整卷作答都会留档：刷题允许留空、考试必须填满，可随时回看复习</p>
+            </div>
+          </header>
+
+          <div class="code-history-toolbar">
+            <div class="seg" role="group" aria-label="记录类型">
+              <button type="button" class="seg-btn is-active" data-ch-mode="all">全部</button>
+              <button type="button" class="seg-btn" data-ch-mode="practice">刷题</button>
+              <button type="button" class="seg-btn" data-ch-mode="exam">考试</button>
+            </div>
+            <div class="ch-combobox" id="chCombobox">
+              <span class="search-box ch-search" role="combobox" aria-expanded="false" aria-haspopup="listbox" aria-owns="chComboList" id="chComboToggle">
+                <svg><use href="#i-search"></use></svg>
+                <input id="chSearch" type="text" placeholder="搜索试卷名称，带下拉模糊筛选…" autocomplete="off" spellcheck="false" aria-label="搜索并筛选试卷" aria-controls="chComboList">
+                <button type="button" class="ch-combo-clear" id="chComboClear" aria-label="清除筛选" title="清除筛选" hidden>×</button>
+                <svg class="ch-combo-caret" aria-hidden="true"><use href="#i-chevron"></use></svg>
+              </span>
+              <ul class="ch-combo-list" id="chComboList" role="listbox" hidden></ul>
+            </div>
+            <span class="ch-count" id="chCount"></span>
+          </div>
+
+          <div class="panel code-history-panel">
+            <div class="code-history-list" id="codeHistoryList"></div>
+            <div class="code-history-pager" id="codeHistoryPager"></div>
+          </div>
+        </section>
+
+        <section class="page" data-page="settings" hidden>
+          <div class="settings-grid">
+            <article class="panel settings-card">
+              <div class="settings-head"><div class="settings-icon"><svg><use href="#i-shield"></use></svg></div><div><h3>数据与隐私</h3><p>题库、图片和练习记录全部保存在本机。</p></div></div>
+              <div class="settings-rows">
+                <div><span>数据目录</span><code id="settingsDataDir">--</code></div>
+                <div><span>数据库大小</span><b id="settingsDbSize">--</b></div>
+                <div><span>题目 / 导入 / 作答</span><b id="settingsCounts">--</b></div>
+                <div><span>图片数量</span><b id="settingsImages">--</b></div>
+              </div>
+              <div class="settings-actions">
+                <a class="btn btn-ghost" href="/api/backup"><svg><use href="#i-download"></use></svg>下载数据库备份</a>
+                <a class="btn btn-ghost" href="/api/export/json"><svg><use href="#i-download"></use></svg>导出 JSON</a>
+                <a class="btn btn-ghost" href="/api/export/csv"><svg><use href="#i-download"></use></svg>导出 CSV</a>
+              </div>
+            </article>
+
+            <article class="panel settings-card lan-card">
+              <div class="settings-head"><div class="settings-icon purple"><svg><use href="#i-camera"></use></svg></div><div><h3>手机访问与同步</h3><p>同一 Wi-Fi 下扫码把系统装到手机桌面；电脑端上传完题目后，一键把题库同步到手机本地。</p></div></div>
+              <div class="lan-body">
+                <div class="mobile-qr-wrap lan-qr">
+                  <img id="lanQr" alt="手机访问完整系统的二维码" hidden>
+                  <div class="mobile-qr-placeholder" id="lanQrPlaceholder"><svg><use href="#i-camera"></use></svg><span>正在获取地址...</span></div>
+                </div>
+                <div class="lan-info">
+                  <p class="lan-url" id="lanUrl">正在检测局域网地址...</p>
+                  <div class="settings-actions">
+                    <button class="btn btn-ghost" id="copyLanUrl" type="button" disabled>复制链接</button>
+                  </div>
+                  <p class="lan-note">鸿蒙 7：用系统浏览器扫这个码打开<b>完整系统</b>（题库、错题本、练习都在里面），再到浏览器菜单里选「添加到桌面」全屏使用；长按桌面图标还能直接进「开始练习」或「错题本」。访问链接已固定，程序重启无需重新扫码。扫码后默认停在「概览」首页；若以前添加过桌面图标，删掉后重新「添加到桌面」，图标也会从首页启动。注意「图片识题」页里的二维码只用于回传照片，本身没有题库。</p>
+                </div>
+              </div>
+              <div class="lan-diag" id="lanDiag">
+                <div class="lan-diag-head">
+                  <strong>手机连不上？连接自检</strong>
+                  <button class="btn btn-ghost btn-sm" id="lanDiagRefresh" type="button">重新检测</button>
+                </div>
+                <div class="lan-diag-list" id="lanDiagList"><span>正在检测网络、防火墙与本机服务...</span></div>
+                <div class="lan-hosts" id="lanHosts" hidden></div>
+              </div>
+              <div class="sync-panel">
+                <div class="sync-panel-head">
+                  <div class="sync-panel-copy">
+                    <strong>题库同步</strong>
+                    <p id="syncMeta">正在读取同步状态...</p>
+                  </div>
+                  <button class="btn btn-primary" id="syncAction" type="button"><svg><use href="#i-refresh"></use></svg>一键同步到手机</button>
+                </div>
+                <p class="sync-note">电脑端上传完题目后点一次，同一 Wi-Fi 下的手机会立即收到最新题库并保存在本地。之后即使电脑关机或手机离开这个 Wi-Fi，打开 App 也能查看错题、题库和练习题目；离线做题的记录会在下次连回 Wi-Fi 时自动回传。</p>
+              </div>
+            </article>
+
+            <article class="panel settings-card">
+              <div class="settings-head"><div class="settings-icon purple"><svg><use href="#i-camera"></use></svg></div><div><h3>OCR 识别引擎</h3><p>截图转文字，全程离线完成。</p></div></div>
+              <div class="engine-status" id="engineStatus"><span class="status-dot"></span><div><strong>检测中...</strong><p>正在检查本地识别组件</p></div></div>
+              <div class="settings-rows">
+                <div><span>引擎</span><b id="settingsEngine">PaddleOCR 3.x · PP-OCRv5</b></div>
+                <div><span>运行方式</span><b>本地 CPU</b></div>
+                <div><span>图片上传</span><b>不会上传</b></div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn-ghost" id="normalizeLines"><svg><use href="#i-fix"></use></svg>整理历史换行</button>
+              </div>
+              <p class="version-line" id="normalizeHint">把旧题目里因排版折行产生的换行合并成一行。</p>
+            </article>
+
+            <article class="panel settings-card">
+              <div class="settings-head"><div class="settings-icon purple"><svg><use href="#i-spark"></use></svg></div><div><h3>外部大模型（两条独立通道）</h3><p>大模型只做云端调用，本机不部署模型。下面两条通道<b>各自独立配置、互不影响</b>：<b>① 图片识别</b>负责把题目截图读准（AI 增强识别），<b>② 整卷解析</b>负责对整卷入库的答案做二次核对。你可以为它们配不同的模型，也可以只开其中一条。</p></div></div>
+              <div class="llm-channels">
+                <section class="llm-channel" data-llm-scope="ocr">
+                  <div class="llm-channel-head">
+                    <h4>① 图片识别大模型 <small>AI 增强识别</small></h4>
+                    <p>把题目截图补全为结构化题干 / 选项 / 答案 / 解析。关闭后整条链路仍由本机 OCR 跑通。</p>
+                  </div>
+                  <div class="settings-rows llm-channel-rows">
+                    <div><span>启用状态</span><b data-llm-enabled-state>未启用</b></div>
+                    <div><span>当前生效模型</span><b data-llm-active>--</b></div>
+                  </div>
+                  <label class="switch-row"><span>启用图片识别大模型</span><label class="switch"><input type="checkbox" data-llm-enabled><span class="slider"></span></label></label>
+                  <div class="llm-profiles" data-llm-profiles></div>
+                  <button class="btn btn-ghost btn-block" type="button" data-llm-add><svg><use href="#i-plus"></use></svg>添加模型</button>
+                </section>
+                <section class="llm-channel" data-llm-scope="parse">
+                  <div class="llm-channel-head">
+                    <h4>② 整卷解析大模型 <small>二次核对</small></h4>
+                    <p>对整卷入库抽取出的答案做语义级复核与纠错。<b>与①完全独立</b>，需单独开关、单独选模型，不与图片识别共用。</p>
+                  </div>
+                  <div class="settings-rows llm-channel-rows">
+                    <div><span>启用状态</span><b data-llm-enabled-state>未启用</b></div>
+                    <div><span>当前生效模型</span><b data-llm-active>--</b></div>
+                  </div>
+                  <label class="switch-row"><span>启用整卷解析大模型</span><label class="switch"><input type="checkbox" data-llm-enabled><span class="slider"></span></label></label>
+                  <div class="llm-profiles" data-llm-profiles></div>
+                  <button class="btn btn-ghost btn-block" type="button" data-llm-add><svg><use href="#i-plus"></use></svg>添加模型</button>
+                </section>
+              </div>
+              <div class="llm-form" id="llmForm" hidden>
+                <div class="field"><label>模型名称（用于区分）</label><input id="llmName" placeholder="如：我的 DeepSeek" maxlength="60"></div>
+                <div class="field"><label>服务商</label><select id="llmPreset"></select></div>
+                <div class="field"><label>API 地址 (Base URL)</label><input id="llmBaseUrl" placeholder="https://api.openai.com/v1"></div>
+                <div class="field"><label>API Key</label><input id="llmApiKey" type="password" placeholder="sk-...（留空表示不修改已保存的密钥）" autocomplete="off"></div>
+                <div class="field"><label>模型名称（调用名）</label><input id="llmModel" placeholder="如 gpt-4o-mini / deepseek-chat / qwen-vl-max"></div>
+                <div class="field"><label>最大生成长度 (max_tokens)</label><input id="llmMaxTokens" type="number" min="1" max="32000" step="1" placeholder="如 1024 / 2048"><small class="field-hint">不同模型上限不同：智谱 GLM-4V-Flash ≤ 1024，多数模型 2048 可用；超出会被服务商拒绝。</small></div>
+                <div class="settings-actions">
+                  <button class="btn btn-ghost" id="llmTest" type="button"><svg><use href="#i-spark"></use></svg>测试连接</button>
+                  <button class="btn btn-ghost" id="llmCancel" type="button">取消</button>
+                  <button class="btn btn-primary" id="llmSave" type="button"><svg><use href="#i-check"></use></svg>保存模型</button>
+                </div>
+                <p class="version-line" id="llmMask"></p>
+              </div>
+              <p class="version-line">密钥仅保存在本机数据库，不会出现在页面源码，也不会上传到任何服务器。OCR 与上面两条大模型通道均只做云端调用，图片识别仍在本机离线完成。</p>
+            </article>
+
+          </div>
+          <div class="settings-dev-entry">
+            <div class="settings-dev-copy"><strong>给开发人员</strong><span>系统架构、模块分工、接口地图与数据模型说明。</span></div>
+            <button class="btn btn-ghost" type="button" data-view="dev">查看系统架构 <svg><use href="#i-arrow"></use></svg></button>
+          </div>
+          <p class="version-line">错题簿 v{{ app_version }} · 本地优先 · 无账号 · 无云端</p>
+        </section>
+
+        <!-- ================================================================
+             使用手册 / Guide
+             设计方向：杂志编辑（Editorial / magazine）。章节编号 + 规则线 +
+             留白控制 + 清晰的层级；配色与字体完全继承「暖纸灯下」令牌 ——
+             手册是产品的一部分，不是一个贴进来的外来文档站。
+             面向第一次打开系统的用户，回答「怎么用、哪里点、出错怎么办」。
+             ================================================================ -->
+        <section class="page guide-page" data-page="guide" hidden>
+          <header class="guide-hero">
+            <div class="guide-hero-copy">
+              <span class="eyebrow dark"><svg><use href="#i-compass"></use></svg> 使用手册</span>
+              <h1>把错题变成分数，<br><em>从单题到整卷</em></h1>
+              <p>这里有两条主线：<b>A 线</b>是一张截图进来，变成一道能练、能追、能熟的题；<b>B 线</b>是把空白代码卷与答案一起录入封存，之后随时开考、交卷判分；有空错的整卷会成组进入错题本，全卷全对才整组移出。下面<b>按左侧菜单从上到下</b>逐页说明：编号就是侧栏位置，点哪页看哪章；最上面的两条主线带先给你一张全景图。</p>
+              <div class="guide-hero-stats">
+                <div><strong>2</strong><span>条主线</span></div>
+                <div><strong>10</strong><span>个菜单页</span></div>
+                <div><strong>0</strong><span>张图上云</span></div>
+              </div>
+              <div class="guide-hero-cta">
+                <button class="btn btn-primary btn-lg" type="button" data-view="capture"><svg><use href="#i-camera"></use></svg>从上传截图开始</button>
+                <button class="btn btn-ghost btn-lg" type="button" data-view="codepaper" data-cp-open="exam"><svg><use href="#i-code"></use></svg>去整卷考试</button>
+                <button class="btn btn-ghost btn-lg" type="button" data-action="start-practice"><svg><use href="#i-play"></use></svg>直接去练习</button>
+              </div>
+            </div>
+            <div class="guide-hero-art" aria-hidden="true">
+              <div class="guide-sheet guide-sheet-3"></div>
+              <div class="guide-sheet guide-sheet-2"></div>
+              <div class="guide-sheet guide-sheet-1">
+                <span class="guide-sheet-line"></span>
+                <span class="guide-sheet-line"></span>
+                <span class="guide-sheet-line short"></span>
+                <span class="guide-sheet-mark"></span>
+              </div>
+              <span class="guide-bookmark"></span>
+            </div>
+          </header>
+
+          <!-- 总览：两条主线讲操作流程，下面的章节才按菜单顺序展开 -->
+          <section class="guide-block">
+            <header class="guide-section-head">
+              <span class="guide-section-no">总览 / Overview</span>
+              <h2>两条主线，先看全景</h2>
+              <p>A 线是「一道题」的流转顺序，B 线是「一整卷代码填空」从录入、封卷到开考、判分的顺序。这两条讲的是操作流程，下面的章节才按左侧菜单从上到下逐页展开。</p>
+            </header>
+
+            <!-- A · 单题主线 -->
+            <div class="guide-track-label">
+              <span class="guide-track-tag">A</span>
+              <h3>单题主线 · 五步闭环</h3>
+              <span class="guide-track-meta">侧栏 02 → 04 → 05 → 06</span>
+            </div>
+            <ol class="guide-flow-band">
+              <li>
+                <span class="guide-flow-no">01</span>
+                <span class="guide-flow-icon"><svg><use href="#i-upload"></use></svg></span>
+                <h3>上传截图</h3>
+                <p>拖进框、粘贴、选文件，或在手机上直接拍。</p>
+                <button class="guide-jump" type="button" data-view="capture">去「图片识题」<svg><use href="#i-arrow"></use></svg></button>
+              </li>
+              <li>
+                <span class="guide-flow-no">02</span>
+                <span class="guide-flow-icon"><svg><use href="#i-search"></use></svg></span>
+                <h3>识别校对</h3>
+                <p>本地 OCR 转成题目，逐题核对题干、选项、答案。</p>
+                <button class="guide-jump" type="button" data-view="capture">去「图片识题」<svg><use href="#i-arrow"></use></svg></button>
+              </li>
+              <li>
+                <span class="guide-flow-no">03</span>
+                <span class="guide-flow-icon"><svg><use href="#i-library"></use></svg></span>
+                <h3>收进题库</h3>
+                <p>勾选「加入题库」，原图自动归档进「题目原图」。</p>
+                <button class="guide-jump" type="button" data-view="library">去「我的题库」<svg><use href="#i-arrow"></use></svg></button>
+              </li>
+              <li>
+                <span class="guide-flow-no">04</span>
+                <span class="guide-flow-icon"><svg><use href="#i-play"></use></svg></span>
+                <h3>练习判分</h3>
+                <p>四种模式抽题，作答即时判分，答错自动进错题本。</p>
+                <button class="guide-jump" type="button" data-view="practice">去「开始练习」<svg><use href="#i-arrow"></use></svg></button>
+              </li>
+              <li>
+                <span class="guide-flow-no">05</span>
+                <span class="guide-flow-icon"><svg><use href="#i-refresh"></use></svg></span>
+                <h3>复习巩固</h3>
+                <p>连续答对 3 次即算掌握，从错题本里毕业。</p>
+                <button class="guide-jump" type="button" data-view="wrong">去「错题本」<svg><use href="#i-arrow"></use></svg></button>
+              </li>
+            </ol>
+
+            <!-- B · 整卷主线：深底卷宗带，与上面的浅色单题带形成对照 -->
+            <div class="guide-track-label guide-track-label--paper">
+              <span class="guide-track-tag">B</span>
+              <h3>整卷主线 · 从录入到开考</h3>
+              <span class="guide-track-meta">侧栏 03 · 整卷入库</span>
+            </div>
+            <section class="guide-paper-band" aria-label="整卷入库主线的三个步骤">
+              <ol class="guide-paper-steps">
+                <li>
+                  <span class="guide-paper-no">01</span>
+                  <div class="guide-paper-copy">
+                    <h4>录入并封卷</h4>
+                    <p>空白代码卷 + 答案参考一起交给系统（文本 / Word / PDF / 图片都行）。系统识别每处空位、对齐标准答案后，把答案封存进卷库。</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="guide-paper-no">02</span>
+                  <div class="guide-paper-copy">
+                    <h4>选卷开考</h4>
+                    <p>从「我的题库 / 错题本」点「整卷考试」挑一份，考场上只显示代码与空格，标准答案不下发到页面；按顺序逐空作答，随时看已填进度与用时。</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="guide-paper-no">03</span>
+                  <div class="guide-paper-copy">
+                    <h4>交卷 · 判分 · 整卷成组</h4>
+                    <p>交卷后逐空揭晓标准答案、算出得分并留档历次成绩。整卷始终是一组填空题，不拆单题：有一个空错就进错题本，全卷全对才整组移出。</p>
+                  </div>
+                </li>
+              </ol>
+              <div class="guide-paper-foot">
+                <span class="guide-paper-seal">答案<br>已封存</span>
+                <p>试卷和答案都不需要题号，空位也不需要编号；一行多个空、答案用红色标注或完全没有颜色，都能处理。原来的「整卷判定」没有删除，现在放在第 02 页签「入库质检」，只负责入库前检查答案有没有对齐。整卷录入后会出现在「我的题库」里（一行一份），考试、改卷都在那里发起；整卷始终成组复习，绝不拆成单题。</p>
+                <button class="guide-jump guide-jump--light" type="button" data-view="codepaper" data-cp-open="exam">直接去开考<svg><use href="#i-arrow"></use></svg></button>
+              </div>
+            </section>
+          </section>
+
+          <div class="guide-layout">
+            <!-- 目录：桌面竖排，移动端横向滚动 -->
+            <nav class="guide-toc" aria-label="手册目录（按左侧菜单顺序）">
+              <div class="guide-toc-head">
+                <span class="guide-toc-title">目录 · 按左侧菜单</span>
+                <p>编号就是侧栏位置，从上到下依次对应；附录是跨页面话题，排在最后。</p>
+              </div>
+              <div class="guide-toc-group">
+                <span class="guide-toc-group-label">菜单页</span>
+                <a href="#g-dashboard" data-anchor="g-dashboard"><i>01</i><svg class="guide-toc-ico"><use href="#i-home"></use></svg><span>概览</span></a>
+                <a href="#g-capture" data-anchor="g-capture"><i>02</i><svg class="guide-toc-ico"><use href="#i-camera"></use></svg><span>图片识题</span></a>
+                <a href="#g-codepaper" data-anchor="g-codepaper"><i>03</i><svg class="guide-toc-ico"><use href="#i-code"></use></svg><span>整卷入库</span></a>
+                <a href="#g-library" data-anchor="g-library"><i>04</i><svg class="guide-toc-ico"><use href="#i-library"></use></svg><span>我的题库</span></a>
+                <a href="#g-practice" data-anchor="g-practice"><i>05</i><svg class="guide-toc-ico"><use href="#i-play"></use></svg><span>开始练习</span></a>
+                <a href="#g-wrong" data-anchor="g-wrong"><i>06</i><svg class="guide-toc-ico"><use href="#i-alert"></use></svg><span>错题本</span></a>
+                <a href="#g-stats" data-anchor="g-stats"><i>07</i><svg class="guide-toc-ico"><use href="#i-chart"></use></svg><span>学习统计</span></a>
+                <span class="guide-toc-here"><i>08</i><svg class="guide-toc-ico"><use href="#i-compass"></use></svg><span>使用手册 · 本页</span></span>
+                <a href="#g-dev" data-anchor="g-dev"><i>09</i><svg class="guide-toc-ico"><use href="#i-code"></use></svg><span>系统架构</span></a>
+                <a href="#g-settings" data-anchor="g-settings"><i>10</i><svg class="guide-toc-ico"><use href="#i-settings"></use></svg><span>设置</span></a>
+              </div>
+              <div class="guide-toc-group guide-toc-group--extra">
+                <span class="guide-toc-group-label">附录</span>
+                <a href="#g-phone" data-anchor="g-phone"><i>A</i><span>装到手机上</span></a>
+                <a href="#g-faq" data-anchor="g-faq"><i>B</i><span>常见问题</span></a>
+              </div>
+            </nav>
+
+            <div class="guide-body">
+              <!-- 01 概览 -->
+              <article class="guide-chapter" id="g-dashboard">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">01</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-home"></use></svg>侧栏 01</span>
+                    <h2>概览：一眼看清今天该练什么</h2>
+                    <p>打开系统默认停在这一页。数字、图表和待办都汇总在这里，不用逐页翻找。</p>
+                  </div>
+                </header>
+
+                <h3 class="guide-h3">顶部四个数字</h3>
+                <ul class="guide-bullets">
+                  <li><b>题库总数 / 待攻克错题 / 已掌握 / 今日正确率</b>：随练习实时更新；点卡片右侧的箭头直接跳到对应的题库、错题本或统计页。</li>
+                  <li><b>近 7 天练习与掌握进度</b>：柱状图看每天答对多少、练了多少，进度环看还有多少没拿下。</li>
+                  <li><b>最需要关注的题 / 最近练习</b>：点条目就地弹出题目详情，刚答完的题可以立刻复盘。</li>
+                </ul>
+                <p class="guide-tip"><svg><use href="#i-spark"></use></svg><span>刚装好时这里全是 0，很正常 —— 先去「图片识题」上传第一张截图，数据就活了。整卷考试的成绩单独留档，不进概览统计；整卷不拆题，也不会计入这里的题库与统计。想直接开考，用顶部横幅的「整卷考试」按钮。</span></p>
+                <button class="guide-jump" type="button" data-view="capture">去「图片识题」<svg><use href="#i-arrow"></use></svg></button>
+              </article>
+
+              <!-- 02 图片识题 -->
+              <article class="guide-chapter" id="g-capture">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">02</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-camera"></use></svg>侧栏 02</span>
+                    <h2>图片识题</h2>
+                    <p>把截图变成题目的入口。所有内容都从这里开始。</p>
+                  </div>
+                </header>
+
+                <h3 class="guide-h3">怎么把截图弄进来</h3>
+                <div class="guide-grid-2">
+                  <div class="guide-note">
+                    <b>拖进来</b>
+                    <p>按住截图文件，拖进页面顶部的虚线框，松手即入队。</p>
+                  </div>
+                  <div class="guide-note">
+                    <b>粘贴</b>
+                    <p>截完图直接 <code>Ctrl</code>/<code>⌘</code> + <code>V</code>，剪贴板里的图会自动进来。</p>
+                  </div>
+                  <div class="guide-note">
+                    <b>选文件</b>
+                    <p>点虚线框里的「选择图片」按钮，从电脑里挑一张或多张。</p>
+                  </div>
+                  <div class="guide-note">
+                    <b>手机拍照</b>
+                    <p>手机端点「拍照识题」，拍完直接进队列，不用先存到相册。</p>
+                  </div>
+                </div>
+                <p class="guide-tip"><svg><use href="#i-spark"></use></svg><span>虚线框本身<em>不点</em>会弹文件选择框 —— 只有「选择图片」按钮才是入口，免得看说明文字时老被弹窗打断。</span></p>
+
+                <h3 class="guide-h3">识别与校对</h3>
+                <ol class="guide-steps">
+                  <li><b>点「开始识别」</b><span>本地 OCR（PaddleOCR）在你自己的电脑上跑，图片不会上传到任何服务器。</span></li>
+                  <li><b>逐题核对</b><span>每张图生成一道题：题干、选项、答案、解析。识别有偏差的地方直接改，改完再入库。</span></li>
+                  <li><b>识别不准怎么办</b><span>点该题的「AI 增强识别」按钮，用大模型重新解析一遍；也可以直接手改。</span></li>
+                </ol>
+                <p class="guide-tip"><svg><use href="#i-comment"></use></svg><span>「给大模型的纠正说明」是可选的：写一句「答案应为 B」「选项顺序反了」，点「AI 识别」时会一起发给模型。下次它就记住这个词了。</span></p>
+
+                <h3 class="guide-h3">解析可以写 Markdown 与公式</h3>
+                <p>解析框里支持 <code>**加粗**</code>、<code>- 列表</code>、<code>1. 有序列表</code>、<code>`行内代码`</code>、<code>```代码块```</code>、<code>&gt; 引用</code>。写的时候，输入框下方会实时显示渲染后的样子，边写边看；内容不是 Markdown 时这块会自动收起。</p>
+                <p>还支持 <b>LaTeX 公式</b>：行内公式用 <code>$...$</code>，独立成行的公式用 <code>$$...$$</code>。例如：</p>
+                <div class="guide-math-demo">
+                  <code>$$Recall=\frac{TP}{TP+FN}$$</code>
+                  <span>会渲染成真正的分数排版，而不是一堆反斜杠。常用命令：<code>\frac</code> 分数、<code>\sqrt</code> 根号、<code>^</code> 与 <code>_</code> 上下标、<code>\sum</code> 求和、<code>\int</code> 积分、<code>\text</code> 正排文字。</span>
+                </div>
+                <p class="guide-tip"><svg><use href="#i-spark"></use></svg><span>公式由内置的 KaTeX 渲染，<b>全程离线</b>，不需要联网。写错了会以红色标出出错的片段，不会把整段解析弄丢。</span></p>
+
+                <h3 class="guide-h3">入库与归档</h3>
+                <ul class="guide-bullets">
+                  <li>勾上卡片左上角的「加入题库」，再点「加入题库」或「全部加入题库」。</li>
+                  <li>入库后，原图会自动从「已上传图片」搬到「题目原图」目录；题库里那道题的「查看原图」照常能打开。</li>
+                  <li>同一张图重复上传、或题干与题库里已有的题重复，会标出提示；点提示可以直接跳去原题。</li>
+                  <li>想一次处理很多张：点「多选」→ 勾选 → 「批量识别」，识别结果会排成队列，一张张处理，互不打断。</li>
+                </ul>
+              </article>
+
+              <!-- 03 整卷入库 -->
+              <article class="guide-chapter" id="g-codepaper">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">03</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-code"></use></svg>侧栏 03</span>
+                    <h2>整卷入库：录入一次，反复开考</h2>
+                    <p>代码填空题专用，定位是<b>纯录入与质检</b>工具：把空白卷和答案参考录入并封存进卷库；试卷录入后会以<b>一行</b>出现在「我的题库」里，考试、编辑、改答案、删除都在那里完成。原来的「对照检查」退到第 02 页签做入库质检。整卷入库视图内只有<b>两个页签：录入试卷 / 入库质检</b>。</p>
+                  </div>
+                </header>
+                <ol class="guide-steps">
+                  <li><b>找到入口</b><span>侧栏第 03 项「整卷入库」是纯录入工具，只有「录入试卷 / 入库质检」两个页签；<b>试卷录入后会出现在「我的题库」里（一行一份）</b>，考试、编辑、改答案、删除都从题库那一行发起。错题本「整卷错题组」里还能「整卷重考」直接开考那一份。页面在主站内嵌切换，侧栏与顶栏常驻；点「概览」或右上「返回概览」随时回去。旧地址 <code>/codepaper</code> 会自动跳到 <code>/#codepaper</code>。</span></li>
+                  <li><b>01 录入试卷</b><span>填试卷名称，左边放空白代码卷、右边放答案参考（可粘贴文本，也可上传 Word / PDF / 图片 / 文本），点「解析并封卷入库」。系统识别全部空位、逐个对齐标准答案，答案随即封存，不再出现在考试页面。</span></li>
+                  <li><b>02 入库质检</b><span>这是入库前的答案对齐校验，不是考试：条件清单、逐空明细、回填代码与人工复核都在这里（原「对照检查」退到这一页签）。只有「每个空都绑定了正确答案」才建议开考；缺空、错位、语法角色不符都会被拦下，不会顺延补齐。</span></li>
+                  <li><b>考场（开考与判分）</b><span>从「我的题库」点某份卷那一行里的「开考」、或错题本「整卷错题组」的「整卷重考」进入：深色答题纸里代码原样呈现，每个空位都是输入框，顶部看已填进度与用时，下方空位导航可跳转。点「交卷并判分」后逐空揭晓你的答案 / 标准答案 / 对错，给出得分、历次成绩与整卷错题组回执；可以「整卷重考一次」或「去错题本看这一组」。整卷不拆成单题，也不进「开始练习」与「学习统计」。</span></li>
+                  <li><b>在题库里修改试卷与答案</b><span>录入后回到「我的题库」，每份整卷是一行：点行内「编辑」可改标题 / 类型 / 两份原文后「重新封卷」；点「改答案」只逐空订正被抽错的标准答案。两种改法都不拆整卷组，改完立即对后续开考生效。</span></li>
+                </ol>
+                <p class="guide-tip"><svg><use href="#i-shield"></use></svg><span>试卷和答案都不需要题号，空位也不需要编号；一行多个空、两份文档注释写法不同、答案用红色标注或完全没有颜色，都能处理。注释里的分值会自动忽略。标准答案只在服务端，取卷接口不下发；交卷后才随成绩单一起揭晓。</span></p>
+                <p class="guide-tip warn"><svg><use href="#i-alert"></use></svg><span>图片试卷已支持几何横线自动检测与答案红字辅助证据，但图片来源一律算低置信度：录入后要到「入库质检」页点「确认已完成人工复核」，质检才判通过。翻拍太糊、或空位之间的括号被 OCR 漏掉时，页面会点名是哪一行并报冲突，请对照原卷手工修正；若答案含带空格的字符串字面量，也请人工复核该空。</span></p>
+              </article>
+
+              <!-- 04 我的题库 -->
+              <article class="guide-chapter" id="g-library">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">04</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-library"></use></svg>侧栏 04</span>
+                    <h2>我的题库</h2>
+                    <p>所有采集进来的题目都在这里，随时查、改、删。录入的整卷也会以<b>一行</b>出现在顶部「整卷考试」区块里，点行内「开考」即可逐空作答——整卷（成组）与这里的单题互不干扰，各走各的统计。</p>
+                  </div>
+                </header>
+
+                <h3 class="guide-h3">找题</h3>
+                <ul class="guide-bullets">
+                  <li><b>搜索框</b>：搜题干、题号、标签，图片里的文字也能搜到。</li>
+                  <li><b>筛选</b>：按题型、按状态（待攻克 / 已掌握）、按标签筛。默认只搜题干，勾上「含选项解析」连选项和解析一起搜。</li>
+                  <li>手机端每页显示多少题会按屏幕高度自动调整，不用自己翻页找。</li>
+                </ul>
+
+                <h3 class="guide-h3">每道题右侧的四个按钮</h3>
+                <div class="guide-icon-row">
+                  <div><span class="guide-icon-btn"><svg><use href="#i-image"></use></svg></span><b>查看原图</b><p>对照原截图检查题干有没有识别歪。</p></div>
+                  <div><span class="guide-icon-btn"><svg><use href="#i-check"></use></svg></span><b>标记已掌握</b><p>手动把这题从错题本里毕业。</p></div>
+                  <div><span class="guide-icon-btn"><svg><use href="#i-edit"></use></svg></span><b>编辑</b><p>改题干、选项、答案、解析、标签、备注。</p></div>
+                  <div><span class="guide-icon-btn"><svg><use href="#i-trash"></use></svg></span><b>删除</b><p>删题后它的原图会退回「已上传图片」。</p></div>
+                </div>
+
+                <h3 class="guide-h3">两处容易忽略的地方</h3>
+                <ul class="guide-bullets">
+                  <li><b>解析</b>：题目行底部的元信息末尾有一枚「解析」小字，点一下就地展开渲染好的解析，再点收起。</li>
+                  <li><b>用原图重新识别</b>：编辑弹窗里可以展开「用原图重新识别」，把原图重新读一遍；结果只填进表单，不会直接改库 —— 确认无误再保存。</li>
+                </ul>
+              </article>
+
+              <!-- 05 开始练习 -->
+              <article class="guide-chapter" id="g-practice">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">05</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-play"></use></svg>侧栏 05</span>
+                    <h2>开始练习</h2>
+                    <p>四种模式抽题，作答即时判分，错题自动归队。</p>
+                  </div>
+                </header>
+
+                <h3 class="guide-h3">四种模式</h3>
+                <div class="guide-mode-grid">
+                  <div><b>错题重练</b><p>从待攻克的错题里抽。<b>推荐</b>，连续答对 3 次即算掌握。</p></div>
+                  <div><b>随机练习</b><p>从全部题库里抽，保持手感、查漏补缺。</p></div>
+                  <div><b>新题练习</b><p>只练还没做过的题，快速完成第一次筛查。</p></div>
+                  <div><b>按标签练习</b><p>选一个知识标签，集中攻克薄弱模块。</p></div>
+                </div>
+                <p class="guide-tip"><svg><use href="#i-spark"></use></svg><span>每张模式卡上会标出「还有多少题可练」。<b>没有错题时，系统会默认帮你选中「随机练习」</b>，不用管它。</span></p>
+
+                <h3 class="guide-h3">答题怎么操作</h3>
+                <ul class="guide-bullets">
+                  <li>点选项，或直接按 <kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd> <kbd>D</kbd>；按 <kbd>Enter</kbd> 提交。</li>
+                  <li>填空题在输入框里写答案；<b>多个可接受的答案用 <code>||</code> 分隔</b>，比如 <code>北京||首都</code>。</li>
+                  <li>发现题干或选项印错了，点题目右上角「编辑本题」，改完保存立即生效 —— 不用退出练习。</li>
+                </ul>
+
+                <h3 class="guide-h3">判分与掌握度规则</h3>
+                <table class="guide-table">
+                  <thead><tr><th>题型</th><th>怎么判</th></tr></thead>
+                  <tbody>
+                    <tr><td>单选 / 多选 / 判断</td><td>选对即得分，多选要一个不差</td></tr>
+                    <tr><td>填空</td><td>与答案一致即得；多个答案用 <code>||</code> 分隔</td></tr>
+                    <tr><td>答错</td><td>自动进入错题本</td></tr>
+                    <tr><td>连续答对 3 次</td><td>标记为「已掌握」，从待攻克里移出</td></tr>
+                  </tbody>
+                </table>
+
+                <h3 class="guide-h3">练完之后</h3>
+                <p>结算页给出正确率、用时和逐题回顾。答错的可以点「重练错题」立刻再来一轮，也可以「打开错题本」逐题复盘。</p>
+              </article>
+
+              <!-- 06 错题本与掌握度 -->
+              <article class="guide-chapter" id="g-wrong">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">06</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-alert"></use></svg>侧栏 06</span>
+                    <h2>错题本与掌握度</h2>
+                    <p>待攻克的题集中在这儿，答对三次自动毕业。整卷以「整卷错题组」成组呈现：点页面顶部的「整卷考试」或组里的「整卷重考」即可开考整份卷，全卷全对才整组移出。</p>
+                  </div>
+                </header>
+                <ul class="guide-bullets">
+                  <li><b>怎么进来的</b>：练习答错自动进；也可以从「我的题库」里手动标记未掌握。</li>
+                  <li><b>怎么出去</b>：同一道题连续答对 3 次自动标记为已掌握，从待攻克列表里消失。</li>
+                  <li><b>在这里能做什么</b>：点条目看题目详情；点「查看原图」对照原图；直接编辑；或者一键「错题重练」。</li>
+                  <li>条目右上角显示「错 N 次」，错得越多排得越前 —— 先啃这些。</li>
+                </ul>
+                <p class="guide-tip"><svg><use href="#i-alert"></use></svg><span>概览页的「最需要关注的题」和「最近练习」点条目都会直接弹出题目详情；在「最近练习」里点开的是你刚做过的那道题，可以立刻复盘。</span></p>
+              </article>
+
+              <!-- 07 学习统计 -->
+              <article class="guide-chapter" id="g-stats">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">07</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-chart"></use></svg>侧栏 07</span>
+                    <h2>学习统计</h2>
+                    <p>用数据看见进步，也看清哪里还虚。</p>
+                  </div>
+                </header>
+                <ul class="guide-bullets">
+                  <li><b>近 7 天练习</b>：柱状图显示每天答对多少题、练了多少题。</li>
+                  <li><b>最易错的题</b>：按错误次数排的榜，点条目看详情 —— 这一列通常最值得花时间。</li>
+                  <li><b>今日正确率 / 已掌握</b>：概览页顶部也有，随做随更新。</li>
+                </ul>
+              </article>
+
+              <!-- 09 系统架构 -->
+              <article class="guide-chapter" id="g-dev">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">09</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-code"></use></svg>侧栏 09</span>
+                    <h2>系统架构：数据从哪来、落到哪</h2>
+                    <p>面向接手维护的人。日常刷题用不到这一页，但想知道数据存在哪、接口怎么调、服务怎么起，看这里最快。</p>
+                  </div>
+                </header>
+                <ul class="guide-bullets">
+                  <li><b>模块地图</b>：Flask 单进程 → OCR 识别 / 解析 / 判分 → SQLite 与本地文件；整卷考试是独立的 <code>codepaper</code> 旁路，不回写主题库；错题本以整卷为一组单独呈现。</li>
+                  <li><b>接口与数据表</b>：列出 <code>/api/*</code> 分组、导入导出端点，以及整卷考试旁路新增的 7 张表。</li>
+                  <li><b>运行信息</b>：本机 <code>127.0.0.1:8765</code>，版本号、进程与存储形态都写在页头。</li>
+                  <li><b>两条流水线</b>：01 蓝图与 02 生命周期讲单题主线；<b>09 / CODE PAPER</b> 章节单独展开整卷考试的录入封卷、卷库、考场判分、整卷错题组链路、接口契约与判定条件。数据库共 15 张表（主链路 8 + 旁路 7）。</li>
+                </ul>
+                <p class="guide-tip"><svg><use href="#i-shield"></use></svg><span>手册讲「怎么用」，架构页讲「怎么实现」。这一页不计入上面的两条主线，也不需要按顺序读，遇到具体问题时回来查就行。</span></p>
+                <button class="guide-jump" type="button" data-view="dev">去「系统架构」<svg><use href="#i-arrow"></use></svg></button>
+              </article>
+
+              <!-- 10 设置 -->
+              <article class="guide-chapter" id="g-settings">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">10</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-settings"></use></svg>侧栏 10</span>
+                    <h2>设置：备份、手机与识别引擎</h2>
+                    <p>数据出口、局域网访问、OCR 状态都集中在这里；日常不用常来，换电脑或连手机时绕不开。</p>
+                  </div>
+                </header>
+
+                <h3 class="guide-h3">数据与隐私</h3>
+                <ul class="guide-bullets">
+                  <li>能看到<b>数据目录、数据库大小、题目 / 导入 / 作答条数、图片数量</b>；全部在本机，不上云。</li>
+                  <li>三个出口：<b>下载数据库备份</b>（整库）、<b>导出 JSON</b>、<b>导出 CSV</b>。换电脑时把整个 <code>data/</code> 目录拷过去即可。</li>
+                  <li><b>导出范围</b>：整卷考试的卷子、逐空明细与考试成绩只在「整库备份」里；JSON 只含题目与作答，CSV 只含题目，手机同步快照也不含整卷记录。整卷不拆题，因此题库与导出里不会出现来自卷库的单题。要保住整卷数据，请下载数据库备份。</li>
+                </ul>
+
+                <h3 class="guide-h3">手机访问与同步</h3>
+                <p>局域网地址、二维码、复制链接、连接自检和「一键同步到手机」都在这块；完整步骤见附录 <b>A「装到手机上」</b>。注意「图片识题」页里的二维码只用来回传照片，本身没有题库。</p>
+
+                <h3 class="guide-h3">OCR 识别引擎与外部大模型</h3>
+                <ul class="guide-bullets">
+                  <li><b>PaddleOCR 3.x · PP-OCRv5</b> 在本地 CPU 上跑，图片不上传；「整理历史换行」可把旧题里因排版折行产生的换行合并。</li>
+                  <li><b>外部大模型是可选的</b>：不配也能完成识别，配了只用于 AI 增强识别与解析；可添加多个模型，以「生效」的那个为准。</li>
+                </ul>
+                <p class="guide-tip warn"><svg><use href="#i-alert"></use></svg><span>建议每次批量入库后顺手点一次「下载数据库备份」。备份文件是完整数据库，别只导 CSV —— CSV 不含原图和练习记录。</span></p>
+              </article>
+
+              <!-- 附录 A 装到手机上 -->
+              <article class="guide-chapter guide-chapter--extra" id="g-phone">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">A</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-book"></use></svg>附录 · 跨页面</span>
+                    <h2>装到手机上</h2>
+                    <p>同一 Wi-Fi 下扫码，手机上就是完整的错题簿；整卷考试的页面依赖电脑端服务，卷库、标准答案与成绩都不在离线快照里。整卷不拆题，也没有可同步到手机的单题。</p>
+                  </div>
+                </header>
+                <ol class="guide-steps">
+                  <li><b>去侧栏 10「设置」页</b><span>找到「手机访问与同步」，页面会显示局域网地址和二维码；这一章只讲操作步骤，设置项的全貌见主章节 10。</span></li>
+                  <li><b>手机扫码打开</b><span>用系统相机或浏览器扫这个码，地址固定，服务重启也不用重扫。</span></li>
+                  <li><b>加到桌面</b><span>浏览器菜单里选「添加到桌面」，之后像 App 一样全屏打开。</span></li>
+                  <li><b>同步题库</b><span>电脑端上传完题目，点一次「一键同步到手机」，手机立刻收到最新题库。</span></li>
+                </ol>
+                <p class="guide-tip"><svg><use href="#i-shield"></use></svg><span>同步后即使电脑关机、或手机离开这个 Wi-Fi，打开也能看题、做题；离线做的记录会在下次连回去时自动回传。注意这条只覆盖快照里的题库与统计：卷库、考试与成绩不在快照内，电脑关机时无法开考或查看历史成绩；整卷不拆题，因此离线快照里也没有可单独练的空位。</span></p>
+                <p class="guide-tip warn"><svg><use href="#i-alert"></use></svg><span>「图片识题」页里那个二维码只用来把手机拍的照片传回电脑，<b>本身没有题库</b>。要完整系统，请扫「设置」页里的码。</span></p>
+              </article>
+
+              <!-- 附录 B 常见问题 -->
+              <article class="guide-chapter guide-chapter--extra" id="g-faq">
+                <header class="guide-chapter-head">
+                  <span class="guide-chapter-no">B</span>
+                  <div>
+                    <span class="guide-chapter-chip"><svg><use href="#i-book"></use></svg>附录 · 跨页面</span>
+                    <h2>常见问题</h2>
+                    <p>先翻这里；数据链路、接口和表结构在主章节 09「系统架构」里。</p>
+                  </div>
+                </header>
+
+                <div class="guide-faq">
+                  <details>
+                    <summary>整卷入库一个空都没识别出来？</summary>
+                    <p>先确认试卷里确实有空位：文本用连续横线（<code>____</code>），Word 用带下划线的空白，图片用几何横线（系统会自动检出，并在结果里写明「几何横线检出 N 处」）。如果翻拍太糊、横线太短或与表格线混在一起，解析页会给出警告；此时建议把代码文字粘贴到左侧框里、把空位补成 <code>____</code> 再解析。系统不会静默把「没检测到空位」当成「试卷没有空位」。</p>
+                  </details>
+                  <details>
+                    <summary>整卷入库的「入库质检」为什么没通过？</summary>
+                    <p>切到第 02 页签「入库质检」看条件清单，哪一项是红的就是卡在哪：常见是答案数与空位数不一致、某个空没找到对应答案行，或答案与该空的语法角色不符。系统不会自动顺延补齐，避免「看起来全填了其实全错位」；把答案参考里缺的那行补上再录入一次即可。如果试卷是图片，「低置信度已复核」会一直亮红，请对照原卷逐空确认后点「确认已完成人工复核」。注意这判的是答案参考对不对，和你考试得几分是两回事。</p>
+                  </details>
+                  <details>
+                    <summary>识别出来的题不准确怎么办？</summary>
+                    <p>三种办法，从快到慢：<b>①</b> 直接在识别结果卡上改；<b>②</b> 点该题的「AI 增强识别」让大模型重读一遍；<b>③</b> 填一句纠正说明（比如「答案应是 B」）再点 AI 识别，模型下次会认这个词。题目已经入库了的话，在「我的题库」里编辑，或用「用原图重新识别」。</p>
+                  </details>
+                  <details>
+                    <summary>「已上传图片」怎么是空的？</summary>
+                    <p>正常。图片入库成为题目后，原图会自动搬到「题目原图」目录，「已上传图片」只留还没生成题目的图。在「图片识题」页点「题目原图」就能看到全部原图，还能下载「题目索引.csv」按编号对号入座。</p>
+                  </details>
+                  <details>
+                    <summary>提示「题库中已存在」怎么办？</summary>
+                    <p>说明这道题的题干和题库里已有的题相同（可能是同一张图重复上传）。点那个提示徽章可以直接跳去原题核对，确认是重复就跳过这张。</p>
+                  </details>
+                  <details>
+                    <summary>手机连不上电脑？</summary>
+                    <p>去「设置」页的「手机连不上？连接自检」，那里会依次检测网络、防火墙和本机服务，并列出可直接访问的地址。同时确认手机和电脑连的是同一个 Wi-Fi。</p>
+                  </details>
+                  <details>
+                    <summary>数据存在哪？怎么备份？</summary>
+                    <p>全部在本机，不上云。「设置」页能看到数据目录、数据库大小和各类数据条数，并提供三个出口：<b>下载数据库备份</b>（整库）、<b>导出 JSON</b>、<b>导出 CSV</b>。换电脑时把整个数据目录拷过去即可。</p>
+                  </details>
+                  <details>
+                    <summary>为什么键盘上能直接答题？</summary>
+                    <p>练习页支持 <kbd>A</kbd>–<kbd>D</kbd> 选答案、<kbd>Enter</kbd> 提交、<kbd>1</kbd>–<kbd>5</kbd> 切题。要改题目本身，题库里点编辑、或练习页点「编辑本题」。</p>
+                  </details>
+                  <details>
+                    <summary>题目里的解析能写公式和表格吗？</summary>
+                    <p>公式可以：支持 LaTeX，行内用 <code>$...$</code>、独立成行用 <code>$$...$$</code>，例如 <code>$$Recall=\frac{TP}{TP+FN}$$</code> 会渲染成真正的分数。Markdown 方面支持标题、加粗、斜体、行内代码、代码块、有序 / 无序列表、引用、链接、分割线；表格这类更复杂的排版暂不支持。</p>
+                  </details>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <footer class="guide-foot">
+            <div>
+              <strong>错题簿</strong>
+              <span>把错题变成分数 · 本地优先 · 无账号 · 无云端</span>
+            </div>
+            <p>题库、练习记录与原图都保存在你自己电脑上。「设置」页随时可以下载备份或导出 CSV / JSON。</p>
+          </footer>
+        </section>
+
+        <!-- ================================================================
+             开发者文档页 / Developer notes
+             设计方向：工业蓝图（Industrial blueprint）。深色焙茶图纸 + 暖砂网格 +
+             赤陶橙流向线，等宽编号与表格化信息；复用现有设计令牌，无外部字体依赖。
+             面向维护者，回答「数据从哪来、经过哪些模块、落到哪里、怎么启动」。
+             ================================================================ -->
+        <section class="page dev-page" data-page="dev" hidden>
+          <div class="dev-shell">
+
+            <header class="dev-hero">
+              <div class="dev-hero-copy">
+                <span class="dev-kicker">SYSTEM ARCHITECTURE / 面向维护与二次开发</span>
+                <h2>一台电脑，<br>一套本地闭环。</h2>
+                <p class="dev-lede">错题簿是<strong>无账号、无云端</strong>的单机应用：Flask 在本地起单进程服务，浏览器既是管理界面、也是手机离线客户端。题目、原图、记录全在本机 SQLite 与文件系统；唯一外部依赖是<strong>可选的 LLM 视觉模型</strong>，关掉后整条链路仍在本机 CPU 跑通。整卷入库（<code>codepaper</code>，不限科目）是并列的第二条流水线。</p>
+                <ul class="dev-keypoints" aria-label="核心要点">
+                  <li><strong>整卷不可拆分</strong>录入封卷 → 卷库 → 考场判分 → 整卷错题组；一空错则整卷进错题本，全对才移出。</li>
+                  <li><strong>两条流水线共存</strong>单题主链路 + codepaper 旁路，共用同一 Flask 进程与 SQLite，整卷成绩单独留档。</li>
+                  <li><strong>不回写、不混入</strong>整卷绝不写成 <code>fill</code> 单题回写 <code>questions</code>，也不进单题练习与统计，只在错题本以「整卷错题组」形态露面。</li>
+                </ul>
+                <div class="dev-stack" aria-label="技术栈">
+                  <span>Python 3 · Flask 3</span><span>SQLite 3</span><span>PaddleOCR · PP-OCRv5</span>
+                  <span>原生 HTML · CSS · JS</span><span>SSE 流式推送</span><span>PWA 可安装</span>
+                  <span>codepaper · python-docx / PyMuPDF / OpenCV</span>
+                </div>
+              </div>
+              <div class="dev-hero-aside">
+                <div class="dev-hero-art" aria-hidden="true">
+                  <div class="guide-sheet guide-sheet-3"></div>
+                  <div class="guide-sheet guide-sheet-2"></div>
+                  <div class="guide-sheet guide-sheet-1">
+                    <span class="guide-sheet-line"></span>
+                    <span class="guide-sheet-line"></span>
+                    <span class="guide-sheet-line short"></span>
+                    <span class="guide-sheet-mark"></span>
+                  </div>
+                  <span class="guide-bookmark"></span>
+                </div>
+                <dl class="dev-hero-meta" aria-label="运行概览">
+                <div><dt>VERSION</dt><dd>v{{ app_version }}</dd></div>
+                <div><dt>SERVICE</dt><dd>0.0.0.0:8765</dd></div>
+                <div><dt>PROCESS</dt><dd>单进程 · threaded</dd></div>
+                <div><dt>STORAGE</dt><dd>SQLite + 文件</dd></div>
+                <div><dt>CLIENT</dt><dd>SPA + mobile PWA</dd></div>
+                <div><dt>EGRESS</dt><dd>仅可选 LLM</dd></div>
+              </dl>
+              </div>
+            </header>
+
+            <!-- 01 架构蓝图：唯一记忆点，深色图纸 + 橙色流向线 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devArchTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">01 / ARCHITECTURE</span>
+                <h3 id="devArchTitle">四层，一条竖直依赖链</h3>
+                <p>上层只依赖下层；识别能力是可插拔的旁支，关掉大模型后整条链路仍可离线跑通。所有写操作都经 Flask 这一层，移动端只是服务端状态的只读缓存。整卷考试是并列的第二条流水线（详见 09 章），同样经 Flask 写库：录入与判分不复用单题的 OCR 解析链路，也不回写 <code>questions</code>：整卷作为一组留在旁路里，只在错题本中以「整卷错题组」的形态露面。</p>
+              </div>
+              <div class="blueprint">
+                <div class="bp-grid" aria-hidden="true"></div>
+                <div class="bp-rail" aria-hidden="true"></div>
+                <ol class="bp-layers">
+                  <li class="bp-layer">
+                    <span class="bp-no">L1</span>
+                    <div class="bp-main">
+                      <strong class="bp-title">客户端 / Client</strong>
+                      <div class="bp-modules"><span class="bp-chip">index.html</span><span class="bp-chip">app.js</span><span class="bp-chip">app.css</span><span class="bp-chip">_codepaper_view.html</span><span class="bp-chip">codepaper.js / .css</span><span class="bp-chip">mobile.html</span><span class="bp-chip">manifest.webmanifest</span></div>
+                    </div>
+                    <p class="bp-desc">原生单页应用，hash 路由（#library / #practice / #codepaper …）；整卷入库是同一 SPA 里的 <code>.page[data-page=codepaper]</code> 视图，样式全部限定在 <code>.cp-embed</code> 作用域。手机端把 <code>bundle.json</code> 快照与离线作答队列存进 localStorage，PWA 可添加到桌面。</p>
+                  </li>
+                  <li class="bp-layer">
+                    <span class="bp-no">L2</span>
+                    <div class="bp-main">
+                      <strong class="bp-title">服务 / Flask</strong>
+                      <div class="bp-modules"><span class="bp-chip">app.py</span><span class="bp-chip">REST API</span><span class="bp-chip">codepaper_bp</span><span class="bp-chip">SSE 推送</span><span class="bp-chip">静态资源</span><span class="bp-chip">局域网诊断 / 二维码</span></div>
+                    </div>
+                    <p class="bp-desc">单进程 threaded 服务，主站约 60 个路由 + 整卷入库独立 Blueprint（<code>/api/code-papers/*</code>）；仅监听本机与局域网地址，图片、备份、导出和模型配置统一经这一层，不暴露公网。</p>
+                  </li>
+                  <li class="bp-layer">
+                    <span class="bp-no">L3</span>
+                    <div class="bp-main">
+                      <strong class="bp-title">能力 / Pipeline</strong>
+                      <div class="bp-modules"><span class="bp-chip">ocr_engine.py</span><span class="bp-chip">parser.py</span><span class="bp-chip">grading.py</span><span class="bp-chip">keyword_extractor.py</span><span class="bp-chip">llm_client.py</span><span class="bp-chip">codepaper/</span></div>
+                    </div>
+                    <p class="bp-desc">OCR 与规则解析在本机 CPU 完成；<code>llm_client</code> 是可选的 OpenAI 兼容视觉模型客户端，调用失败自动降级回 OCR 结果，不阻塞入库。整卷入库另走 <code>codepaper/ingest.py</code> + <code>vision.py</code>：结构化文档优先，图片才降级到 OCR，解析结果不进单题的 <code>parser.py</code>。</p>
+                  </li>
+                  <li class="bp-layer">
+                    <span class="bp-no">L4</span>
+                    <div class="bp-main">
+                      <strong class="bp-title">数据 / Storage</strong>
+                      <div class="bp-modules"><span class="bp-chip">wrongbook.db</span><span class="bp-chip">uploads/</span><span class="bp-chip">question_images/</span><span class="bp-chip">sync/bundle.json</span><span class="bp-chip">tmp/</span></div>
+                    </div>
+                    <p class="bp-desc">SQLite 共 15 张表：单题主链路 8 张 + 整卷考试旁路 7 张（表名见 09 章）；未关联原图在 uploads，已入库题目原图归档到 question_images，手机快照与 OCR 中间文件按目录隔离。</p>
+                  </li>
+                </ol>
+                <p class="bp-caption">FIG. 01 — 请求自 L1 向下，识别结果自 L3 回流，最终落到 L4</p>
+              </div>
+              <aside class="dev-callout dev-callout--inline">
+                <span class="dev-callout-label">DESIGN INVARIANTS</span>
+                <p>① 无外部服务：除可选的 LLM 调用外，进程不向外发起任何网络请求；② 无账号体系：权限仅靠局域网令牌（<code>lan_token.txt</code>），不做用户鉴权；③ 单一进程持有数据库：SQLite 由本进程独占读写，不在多进程间共享；④ 移动端非真相源：题库与作答以电脑端为准，手机断网产生的记录联网后幂等回传。</p>
+              </aside>
+            </section>
+
+            <!-- 02 一道题的生命周期 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devFlowTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">02 / LIFECYCLE</span>
+                <h3 id="devFlowTitle">一道题的六次转身</h3>
+                <p>从截图到统计，每一步都有对应的模块与落盘点；去重与归档都发生在入库这一步。虚线箭头表示数据回写存储层（L4）。整卷考试有自己的录入、封卷、判分与整卷错题组链路（见 09 章）；它不接回上面的「收进题库 → 练习 → 统计」，错题本里的整卷组是并列展示的第二类条目。</p>
+              </div>
+              <ol class="dev-pipeline">
+                <li class="pipe-step"><span class="pipe-no">01</span><strong>采集</strong><p>截图上传或手机拍照，落 <code>data/uploads/</code>；<code>_image_digest()</code> 用 SHA-256 算内容指纹，命中 <code>image_hashes</code> 即跳过重复上传。</p></li>
+                <li class="pipe-step"><span class="pipe-no">02</span><strong>识别</strong><p><code>POST /api/ocr</code> → <code>ocr_engine.recognize()</code> 跑 PaddleOCR，套用 <code>ocr_corrections</code> 纠错；可选 <code>POST /api/llm/parse</code> 补全题干/选项/解析。</p></li>
+                <li class="pipe-step"><span class="pipe-no">03</span><strong>校对</strong><p><code>parser.parse_lines()</code> 按段拆题，<code>parse_segment()</code> 提取选项与答案；前端草稿卡逐题改题干、答案与「图片中的作答」。</p></li>
+                <li class="pipe-step"><span class="pipe-no">04</span><strong>入库</strong><p><code>POST /api/questions/bulk</code> 先 <code>soft_normalize()</code> + 相似度/包含度查重再 INSERT；<code>_archive_used_images()</code> 把用到的原图从 uploads 移到 question_images。</p></li>
+                <li class="pipe-step"><span class="pipe-no">05</span><strong>练习</strong><p><code>POST /api/practice/{start,answer,finish}</code> 出题与判分，<code>grading.grade_answer()</code> 归一化答案；结果写 <code>attempts</code> 并刷新 <code>mastery</code> / <code>streak</code>。</p></li>
+                <li class="pipe-step"><span class="pipe-no">06</span><strong>同步</strong><p>SSE <code>/api/sync/stream</code> 通知手机拉新 <code>bundle.json</code>；离线作答进 localStorage 队列，联网后 <code>POST /api/sync/attempts</code> 按 <code>client_key</code> 幂等回传。</p></li>
+              </ol>
+            </section>
+
+            <!-- 03 识别流水线：从截图到结构化题目 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devOcrTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">03 / RECOGNITION</span>
+                <h3 id="devOcrTitle">从一张截图到结构化题目</h3>
+                <p>识别不是一次 OCR 调用，而是一条可观测的流水线：图像预处理、引擎识别、阅读顺序重建、纠错、规则解析，最后才是可选的模型增强。</p>
+              </div>
+              <ol class="dev-flow">
+                <li><code>_save_image()</code><p>校验扩展名与大小（≤ 25MB），用 PIL 验证是否为合法图像，落盘到 <code>data/uploads/</code>。</p></li>
+                <li><code>_image_digest()</code><p>对流式分块计算 SHA-256 内容指纹，与 <code>image_hashes</code> 比对实现上传去重。</p></li>
+                <li><code>ocr_engine.recognize()</code><p>缩放/二值化预处理 → 写入 <code>data/tmp/</code> 临时 PNG（不放 uploads，避免被当成用户图片）→ 引擎 <code>.ocr()</code> 加锁执行 → <code>_normalize_result()</code> → <code>_group_lines()</code> 重建阅读顺序，返回 <code>lines / raw_text / elapsed / engine</code>。整卷入库另用 <code>recognize_detail()</code> 拿未合并的原始 box（保留行内 x 明细）与同一张增强图，交给 <code>codepaper/vision.py</code> 做几何横线与红色分割；两条出口共用 <code>_infer()</code>，主链路行为不变。</p></li>
+                <li><code>ocr_corrections</code><p>易错词 → 正确词的词典，识别后逐行替换，纠正「0/O」「l/1」「阅渎」类笔误。</p></li>
+                <li><code>parser.parse_lines()</code><p>分段 <code>parse_segment()</code>：<code>clean_text()</code> → <code>merge_wrapped_lines()</code> → 定位选项起始 <code>option_start_index()</code> → <code>split_inline_options()</code> / <code>parse_options()</code> → <code>answer_value()</code> / <code>truefalse_value()</code> → <code>infer_type()</code> 推断题型 → <code>soft_normalize()</code> 生成去重指纹。</p></li>
+                <li><code>llm_client.parse_question_image()</code><p>可选：视觉模型把 OCR 文本补全为结构化题干/选项/答案/解析；调用失败自动降级回 OCR 结果，不阻塞入库。</p></li>
+              </ol>
+              <div class="dev-cols" style="margin-top:16px">
+                <article class="dev-panel">
+                  <h4><span>RESPONSE</span> POST /api/ocr</h4>
+<pre class="dev-json">{
+  "lines": [
+    { "text": "1. 下列关于...的说法正确的是", "score": 0.98 },
+    { "text": "A. ...   B. ...   C. ...", "score": 0.95 }
+  ],
+  "raw_text": "1. 下列...\n2. ...",
+  "line_count": 12,
+  "elapsed": 1.84,
+  "engine": "PP-OCRv5",
+  "image_size": [1200, 1600]
+}</pre>
+                </article>
+                <article class="dev-panel">
+                  <h4><span>FALLBACK</span> 降级策略</h4>
+                  <ul class="dev-list">
+                    <li><code>引擎缺失</code><p>抛 RuntimeError，前端提示「OCR 引擎未就绪」。</p></li>
+                    <li><code>LLM 关闭/超时</code><p>跳过模型增强，直接用 OCR + 规则解析结果。</p></li>
+                    <li><code>解析为空</code><p>返回整段 raw_text，由草稿卡手动校对。</p></li>
+                  </ul>
+                </article>
+              </div>
+            </section>
+
+            <!-- 04 练习、判分与掌握度 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devGradTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">04 / PRACTICE</span>
+                <h3 id="devGradTitle">练习会话、判分与掌握度</h3>
+                <p>一次练习是一个服务端内存会话；判分在前端与后端用同一套归一化规则；掌握度由连续答对次数驱动，作为错题筛选与复习优先级依据。</p>
+              </div>
+              <div class="dev-cols">
+                <article class="dev-panel">
+                  <h4><span>SESSION</span> 练习会话协议</h4>
+                  <ul class="dev-list">
+                    <li><code>start</code><p>按 mode（random / wrong / unseen / tag / custom）筛选，返回 <code>session_id</code>（<code>secrets.token_urlsafe(12)</code>）与题目清单；会话仅存于进程内存 <code>_sessions</code>，服务重启即失效。</p></li>
+                    <li><code>answer</code><p>携带 session_id + question_id + answer；<code>normalize_user_answer()</code> 归一化后用 <code>grading.grade_answer()</code> 判分，写入 <code>attempts</code> 并刷新掌握度；重复提交直接返回原结果（duplicate）。</p></li>
+                    <li><code>finish</code><p>聚合本次会话判分结果，返回正确率、耗时与错题 id 列表。</p></li>
+                  </ul>
+                </article>
+                <article class="dev-panel">
+                  <h4><span>GRADING</span> 归一化判分</h4>
+                  <p class="dev-note"><code>grade_answer(qtype, options, correct, user)</code> 返回 <code>(is_correct, normalized_correct)</code>，规则：</p>
+                  <ul class="dev-list">
+                    <li><code>single</code><p>取首字母比较；<code>normalize_letters()</code> 抽取 A–Z。</p></li>
+                    <li><code>multiple</code><p>对答案与作答做字母集合排序后比较。</p></li>
+                    <li><code>truefalse</code><p><code>truefalse_value()</code> 归一化「对/错/√/×/T/F」。</p></li>
+                    <li><code>fill</code><p><code>||</code> 或 <code>|</code> 分隔的多候选答案，任一匹配即正确。</p></li>
+                  </ul>
+                </article>
+              </div>
+              <article class="dev-panel" style="margin-top:16px">
+                <h4><span>MASTERY</span> 掌握度演化（每次作答后写入）</h4>
+                <div class="dev-mastery">
+                  <div class="mm-step"><span class="mm-no">答对</span><p>streak + 1；若 streak ≥ 3 则 mastery = 3，否则 mastery = max(2, 原值)；correct_count + 1。</p></div>
+                  <div class="mm-step"><span class="mm-no">答错</span><p>streak = 0；mastery = 1；wrong_count + 1。</p></div>
+                  <div class="mm-step"><span class="mm-no">标记掌握</span><p><code>/master</code> 强制 mastery = 3、streak = 3。</p></div>
+                  <div class="mm-step"><span class="mm-no">重置</span><p><code>/reset</code> 清零 mastery / streak / 计数，并删除该题全部 attempts。</p></div>
+                </div>
+                <p class="dev-note" style="margin-top:12px">状态过滤口径：wrong = <code>wrong_count&gt;0 AND mastery&lt;3</code>；mastered = <code>mastery&gt;=3</code>；new = 未作答；ready = 已有答案。</p>
+              </article>
+            </section>
+
+            <!-- 05 接口地图 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devApiTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">05 / ENDPOINTS</span>
+                <h3 id="devApiTitle">接口地图</h3>
+                <p>按职责分组的高频路由；完整清单见 <code>app.py</code> 的 <code>@app.route</code> 与 <code>codepaper/routes.py</code>。列表接口统一返回 <code>{items,total,page,per_page,pages}</code>，写操作返回 <code>{ok}</code> 或带 HTTP 状态的 <code>{error}</code>；成功后会让标签指纹失效并触发 SSE。</p>
+              </div>
+              <div class="dev-table-wrap">
+                <table class="api-table">
+                  <caption class="sr-only">系统主要 API 路由分组</caption>
+                  <thead><tr><th scope="col">分组</th><th scope="col">方法与路径</th><th scope="col">作用</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">概览</th><td><code>GET /api/overview · /api/stats · /api/tags</code></td><td>首页统计、学习曲线、标签列表（带 revision 指纹）</td></tr>
+                    <tr><th scope="row">题库</th><td><code>GET /api/questions</code></td><td>分页 / 搜索 / 题型 / 状态 / 标签筛选；搜索范围可切换</td></tr>
+                    <tr><th scope="row">题库</th><td><code>GET · PUT · DELETE /api/questions/&lt;id&gt;</code></td><td>详情、编辑、删除（含原图回收）</td></tr>
+                    <tr><th scope="row">题库</th><td><code>POST /api/questions/bulk</code></td><td>草稿批量入库，含相似题查重与原图归档</td></tr>
+                    <tr><th scope="row">掌握</th><td><code>POST /api/questions/&lt;id&gt;/master · /reset</code></td><td>标记掌握 / 重置掌握度与作答记录</td></tr>
+                    <tr><th scope="row">识别</th><td><code>POST /api/ocr</code> · <code>POST /api/llm/parse</code></td><td>本地 OCR / 可选大模型解析</td></tr>
+                    <tr><th scope="row">识别</th><td><code>GET /api/ocr/corrections</code> · <code>POST /api/uploads/&lt;name&gt;/recognize</code></td><td>纠错词典、未关联图片识别后关联题目</td></tr>
+                    <tr><th scope="row">练习</th><td><code>POST /api/practice/start · answer · finish</code></td><td>出题、判分、结算与回顾</td></tr>
+                    <tr><th scope="row">同步</th><td><code>GET /api/sync/manifest · bundle · stream</code></td><td>版本探测、快照下载、SSE 推送</td></tr>
+                    <tr><th scope="row">同步</th><td><code>POST /api/sync/publish · /api/sync/attempts</code></td><td>生成 bundle / 离线作答队列回传，按 client_key 幂等</td></tr>
+                    <tr><th scope="row">图片</th><td><code>/uploads/&lt;path&gt;</code> · <code>/question_images/&lt;path&gt;</code></td><td>待关联原图 / 已入库原图</td></tr>
+                    <tr><th scope="row">图片</th><td><code>POST /api/question-images/sync</code> · <code>POST /api/uploads/&lt;name&gt;/unlink</code></td><td>原图目录对账 / 取消关联退回 uploads</td></tr>
+                    <tr><th scope="row">手机</th><td><code>POST /api/mobile/upload</code> · <code>/api/mobile/inbox/take</code></td><td>手机拍照回传与取件</td></tr>
+                    <tr><th scope="row">运维</th><td><code>GET /api/export/json · csv · /api/backup</code></td><td>导出与数据库备份</td></tr>
+                    <tr><th scope="row">配置</th><td><code>/api/settings</code> · <code>/api/llm/*</code> · <code>/api/lan/diag</code></td><td>系统设置、模型管理、连接自检</td></tr>
+                    <tr><th scope="row">整卷考试</th><td><code>/api/code-papers/*</code></td><td>独立 Blueprint：解析封卷、卷库、取卷 / 判分 / 成绩、整卷错题组、逐空质检与人工复核；完整契约见 09 章</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <!-- 06 数据模型与文件 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devDataTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">06 / DATA MODEL</span>
+                <h3 id="devDataTitle">十五张表，三个目录</h3>
+                <p>关系数据都在一个 SQLite 文件里，共 <b>15 张表</b>：单题主链路 8 张 + 整卷考试旁路 7 张（表名与判定条件见 09 章）；本节展开主链路。图片与快照是普通文件，备份时连同 <code>wrongbook.db</code> 一起带走即可。下表为题库核心表 <code>questions</code> 的字段。</p>
+              </div>
+              <div class="dev-table-wrap">
+                <table class="api-table">
+                  <caption class="sr-only">questions 表结构</caption>
+                  <thead><tr><th scope="col">列</th><th scope="col">类型</th><th scope="col">含义</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>id</code></td><td>INTEGER PK</td><td>自增主键</td></tr>
+                    <tr><td><code>qno</code></td><td>TEXT</td><td>题号，如 “1.2”</td></tr>
+                    <tr><td><code>stem</code></td><td>TEXT NOT NULL</td><td>题干</td></tr>
+                    <tr><td><code>qtype</code></td><td>TEXT</td><td>single / multiple / truefalse / fill</td></tr>
+                    <tr><td><code>options</code></td><td>TEXT(JSON)</td><td>选项映射 {A:…, B:…}</td></tr>
+                    <tr><td><code>answer</code></td><td>TEXT</td><td>正确选项字母 / 填空答案</td></tr>
+                    <tr><td><code>explanation</code></td><td>TEXT</td><td>解析（Markdown + LaTeX）</td></tr>
+                    <tr><td><code>tags</code></td><td>TEXT(JSON)</td><td>标签数组，默认 ["其他"]</td></tr>
+                    <tr><td><code>source_image</code></td><td>TEXT</td><td>原图相对路径</td></tr>
+                    <tr><td><code>source_text</code></td><td>TEXT</td><td>整张卷子的 OCR 原文</td></tr>
+                    <tr><td><code>note</code></td><td>TEXT</td><td>用户备注</td></tr>
+                    <tr><td><code>fingerprint</code></td><td>TEXT UNIQUE</td><td>归一化题干哈希，去重主键</td></tr>
+                    <tr><td><code>wrong_count</code></td><td>INTEGER</td><td>累计答错次数</td></tr>
+                    <tr><td><code>correct_count</code></td><td>INTEGER</td><td>累计答对次数</td></tr>
+                    <tr><td><code>streak</code></td><td>INTEGER</td><td>连续答对次数</td></tr>
+                    <tr><td><code>mastery</code></td><td>INTEGER</td><td>掌握度（0→3，3 为已掌握）</td></tr>
+                    <tr><td><code>last_practiced_at</code></td><td>TEXT</td><td>最近作答时间（ISO）</td></tr>
+                    <tr><td><code>created_at / updated_at</code></td><td>TEXT</td><td>创建 / 更新时间戳</td></tr>
+                    <tr><td><code>archived</code></td><td>INTEGER</td><td>软删除标记</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="dev-cols" style="margin-top:16px">
+                <article class="dev-panel">
+                  <h4><span>SCHEMA</span> 主链路其余七张表</h4>
+                  <ul class="dev-list">
+                    <li><code>attempts</code><p>每次作答：question_id / user_answer / correct_answer / is_correct / mode / duration_ms / created_at</p></li>
+                    <li><code>imports</code><p>OCR 原始行与草稿（line_json）</p></li>
+                    <li><code>image_hashes</code><p>SHA-256 指纹，上传去重</p></li>
+                    <li><code>ocr_corrections</code><p>wrong → right 纠错词典</p></li>
+                    <li><code>settings</code><p>键值配置，含模型与密钥</p></li>
+                    <li><code>sync_attempt_keys</code><p>离线作答幂等键（client_key）</p></li>
+                    <li><code>mobile_inbox</code><p>手机拍照回传队列</p></li>
+                  </ul>
+                  <p class="dev-note">加速索引：idx_questions_mastery、idx_questions_wrong、idx_attempts_created / _question、idx_image_hashes_digest 等。整卷考试的 7 张表由 <code>codepaper/store.py</code> 幂等创建，与上面 8 张表同库。v1.4.0 曾给 <code>questions</code> 加过 <code>paper_id</code> / <code>paper_seq</code> 两列用于拆题，v1.4.1 起整卷不拆单题，这两列成为历史遗留，不再读写。</p>
+                </article>
+                <article class="dev-panel">
+                  <h4><span>FILES</span> data/ 目录</h4>
+                  <ul class="dev-list">
+                    <li><code>wrongbook.db</code><p>全部关系数据</p></li>
+                    <li><code>uploads/</code><p>已上传、未关联题目的原图</p></li>
+                    <li><code>question_images/</code><p>已入库题目原图 + 「题目索引.csv」；删题/取消关联退回 uploads</p></li>
+                    <li><code>sync/bundle.json</code><p>一键同步生成的手机快照</p></li>
+                    <li><code>tmp/</code><p>OCR 中间 PNG，处理完即删</p></li>
+                    <li><code>lan_token.txt</code><p>手机访问令牌，重启不变</p></li>
+                  </ul>
+                  <h4 class="dev-subhead"><span>CODE</span> 根目录</h4>
+                  <p class="dev-note"><code>app.py</code> 路由层 · <code>db.py</code> 建表与查询 · <code>ocr_engine.py</code> 识别 · <code>parser.py</code> 拆题 · <code>grading.py</code> 判分 · <code>keyword_extractor.py</code> 标签 · <code>llm_client.py</code> 模型客户端 · <code>codepaper/</code> 整卷入库旁路（model / core / ingest / vision / store / routes / selftest）· <code>templates/</code> 主站、手机拍照页与整卷入库片段 · <code>static/</code> 样式与交互。</p>
+                </article>
+              </div>
+            </section>
+
+            <!-- 07 离线同步 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devSyncTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">07 / OFFLINE SYNC</span>
+                <h3 id="devSyncTitle">手机为什么断网也能做题</h3>
+                <p>不是把请求缓存下来，而是把判分逻辑与题库一起复制到本地，联网后再合并记录。整条同步链路靠「版本号 + 指纹 + 幂等键」三者保证最终一致。卷库、标准答案与考试成绩不在这份快照里：它们只存在电脑端数据库，手机端要连回同一服务才能开考或查看成绩；整卷不拆题，因此这份快照里没有来自卷库的单题。</p>
+              </div>
+              <div class="dev-sync">
+                <div class="dev-sync-steps">
+                  <div><span>1</span><p><b>发布快照</b>：电脑端点「一键同步」，服务端把题库与统计打成 <code>bundle.json</code>，版本号 +1。</p></div>
+                  <div><span>2</span><p><b>推送与落盘</b>：<code>/api/sync/stream</code> 的 SSE 通知手机，手机拉快照存进 <code>localStorage</code>。</p></div>
+                  <div><span>3</span><p><b>本地判分</b>：离线时 <code>/api/practice/*</code> 在前端按同一套归一化规则判分，作答进队列。</p></div>
+                  <div><span>4</span><p><b>幂等回传</b>：恢复连接后按 <code>client_key</code> 提交，服务端用 <code>sync_attempt_keys</code> 去重，避免双写。</p></div>
+                </div>
+                <aside class="dev-callout">
+                  <span class="dev-callout-label">SYNC PROTOCOL</span>
+                  <p><b>bundle.json</b> 含 <code>version</code>、<code>generated_at</code>、<code>questions[]</code>（id, stem, qtype, options, answer, tags, mastery…）、<code>stats</code> 与 <code>tags[]</code>。手机先拉 <code>/api/sync/manifest</code> 比对版本号；仅当版本变化或收到 SSE 推送时才下载整包，避免每次轮询全量传输。</p>
+                  <p>标签列表以「名称 + 计数」计算 <code>revision</code> 指纹，切页 / 写操作 / 回前台 / 30 秒轮询都会校验，变了才回全量。离线作答经 <code>POST /api/sync/attempts</code> 按 <code>client_key</code> 提交，服务端用 <code>sync_attempt_keys</code> 去重，杜绝双写。</p>
+                </aside>
+              </div>
+            </section>
+
+            <!-- 08 启动与设计令牌 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devStartTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">08 / RUN &amp; CONFIG</span>
+                <h3 id="devStartTitle">跑起来 &amp; 改样式</h3>
+                <p>没有构建步骤；改完 HTML/CSS/JS 刷新浏览器即可，Python 侧改动需重启服务。</p>
+              </div>
+              <div class="dev-cols">
+                <article class="dev-panel">
+                  <h4><span>RUN</span> 本地启动</h4>
+                  <pre class="dev-code"><code>.venv\Scripts\python.exe app.py --no-browser
+# 服务监听 0.0.0.0:8765
+# 手机：同一 Wi-Fi 扫码 /p/&lt;token&gt;，默认进概览
+# 健康检查：GET /api/health</code></pre>
+                  <p class="dev-note">依赖见 <code>requirements.txt</code>；PaddleOCR 在本机 CPU 运行，首次识别会有冷启动开销。Windows 需为 TCP 8765 添加「专用网络 + 本地子网」入站规则。</p>
+                </article>
+                <article class="dev-panel">
+                  <h4><span>TOKENS</span> 设计令牌</h4>
+                  <div class="dev-tokens">
+                    <div><i style="background:#f5efe2"></i><code>--bg</code><span>暖米纸底</span></div>
+                    <div><i style="background:#fffbf2"></i><code>--surface</code><span>卡片面</span></div>
+                    <div><i style="background:#33291f"></i><code>--ink</code><span>暖褐墨字</span></div>
+                    <div><i style="background:#2e251d"></i><code>--sidebar</code><span>焙茶侧栏 / 图纸底</span></div>
+                    <div><i style="background:#a5522c"></i><code>--primary</code><span>赤陶强调</span></div>
+                    <div><i style="background:#d99554"></i><code>--primary-bright</code><span>深色底上的强调</span></div>
+                  </div>
+                  <p class="dev-note">「暖纸灯下」：不用纯白 / 纯黑、去掉冷蓝光，绿 = 对、红 = 错。所有颜色集中在 <code>:root</code>，组件内不写死色值；断点为 1120 / 680 / 430px。</p>
+                </article>
+              </div>
+            </section>
+
+            <!-- 09 整卷考试旁路 -->
+            <section class="dev-section dev-reveal" aria-labelledby="devCodepaperTitle">
+              <div class="dev-section-head">
+                <span class="dev-index">09 / CODE PAPER</span>
+                <h3 id="devCodepaperTitle">整卷考试：录入、封卷、开考、整卷成组</h3>
+                <p>v1.3.0 引入的独立 Blueprint（后端旁路），v1.4.0 从「一次性对照检查」扩展成完整考试链路，v1.4.1 确立整卷不可拆分：<b>录入 → 入库质检 → 封存卷库 → 取卷开考 → 交卷判分 → 成绩留档 → 整卷错题组</b>。一份卷 = 一组有关联的填空题，有任意一空没答对整组进错题本，全卷全对整组移出；绝不拆成单题。标准答案只在服务端，取卷接口不下发；现有 <code>/api/ocr</code>、<code>parse_lines</code>、<code>/api/questions/bulk</code> 一行未改，<code>questions</code> 也不会被写入。v1.4.3 起整卷入库定位为<b>纯录入与质检</b>工具，视图内只有<b>两个页签（录入试卷 / 入库质检）</b>；卷库管理（显示 / 编辑 / 改答案 / 删除）已移到「我的题库」，试卷以<b>一行</b>呈现在题库里，考试、改卷都从那一行发起。「考场」不再作为页签，改为从「我的题库 / 错题本」的深链进入。前端仍是主站内的 <code>.page[data-page=codepaper]</code> 视图，两个页签共享侧栏与顶栏，<code>codepaper.css</code> 全部规则限定在 <code>.cp-embed</code> 作用域内。对应使用手册总览的 <b>B 线（整卷主线 · 从录入到开考）</b>。</p>
+              </div>
+              <div class="dev-cols">
+                <article class="dev-panel">
+                  <h4><span>PIPELINE</span> 解析与考试两条链</h4>
+                  <pre class="dev-code"><code>A 录入 / 入库质检
+  docx / pdf / image / text
+    → vision.py 几何横线 + HSV 红分割
+    → ingest.NormDoc → detect_blanks(global_no)
+    → extract_answers（模板常量段顺序匹配）
+    → fill + verify（strict，全对才 passed）
+    → store.save_result → 答案封存进卷库
+
+B 开考 / 判分
+  GET  /papers/&lt;id&gt;/exam   → 模板 + 空位（无答案）
+  POST /papers/&lt;id&gt;/grade  → grade_exam()
+    → 逐空 squash 比对 || 等价写法
+    → score / passed / 逐空批改
+    → code_exam_attempts 留档
+  GET  /wrong-papers            → 待攻克整卷组（不拆单题）</code></pre>
+                  <p class="dev-note">核心仍是「常量段顺序匹配」：把 <code>data = ____</code> 与 <code>data = pd.read_csv(...)</code> 去掉注释与空白后，按常量段 <code>data=</code> 定位，中间夹出的就是答案。<code>verify()</code> 判的是<b>答案参考有没有对齐</b>（入库质检），<code>grade_exam()</code> 判的是<b>考生填得对不对</b>（考试），两者互不替代。前端由 <code>codepaper.js</code> 独立驱动，所有 id / class 带 <code>cp</code> 前缀；概览与手册的「整卷考试」按钮用 <code>data-cp-open</code> 深链直接进考场。</p>
+                </article>
+                <article class="dev-panel">
+                  <h4><span>CONTRACT</span> 接口与数据</h4>
+                  <pre class="dev-code"><code>GET    /#codepaper                 主站内嵌视图
+GET    /codepaper                  302 → /#codepaper
+GET    /api/code-papers/health | demo
+POST   /api/code-papers/parse       JSON 或 multipart，落库
+POST   /api/code-papers/seed        内置示例卷（幂等）
+GET    /api/code-papers/papers
+GET|DELETE /papers/&lt;id&gt;           详情（含答案）/ 删卷
+GET    /papers/&lt;id&gt;/exam           取卷（不含答案）
+POST   /papers/&lt;id&gt;/grade          交卷判分
+GET    /papers/&lt;id&gt;/attempts       成绩记录
+GET    /api/code-papers/wrong-papers  整卷错题组（不下发答案）
+GET    /api/code-papers/runs/&lt;id&gt;
+POST   /api/code-papers/runs/&lt;id&gt;/review</code></pre>
+                  <p class="dev-note">旁路共 7 张表：<code>code_papers</code> / <code>code_blocks</code> / <code>blanks</code> / <code>answers</code> / <code>blank_checks</code> / <code>verify_runs</code> / <code>code_exam_attempts</code>；<code>questions</code> 里遗留的 <code>paper_id</code> / <code>paper_seq</code> 两列不再读写。结构化格式（Word 下划线 run、PDF span 颜色）精确读取；图片走 <code>recognize_detail()</code> 保留行内 x 明细，支持一行多空。图片空位为低置信度，<code>/review</code> 只清复核标记、不放行硬冲突。取卷接口刻意只返回模板与空位元数据，答案在服务端由 <code>answer_key()</code> 提供。整卷错题组按「最近一次交卷」判进出：有任意一空错或未作答即进组，全卷全对才移出；<code>/wrong-papers</code> 只返回逐空对错三态，不含标准答案与用户答案。</p>
+                </article>
+              </div>
+              <div class="dev-table-wrap">
+                <table class="api-table">
+                  <caption class="sr-only">整卷入库入库质检判定条件</caption>
+                  <thead><tr><th scope="col">判定条件</th><th scope="col">不满足时</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>空位数 == 答案数</code></td><td>alignment_conflict，整卷退回人工，禁止自动顺延补齐</td></tr>
+                    <tr><td><code>每空已绑定且已填写</code></td><td>该空 result=fail，整卷不通过</td></tr>
+                    <tr><td><code>语法角色匹配</code></td><td>答案落在不该出现的位置（整体顺延错位）会被这条独立信号抓住</td></tr>
+                    <tr><td><code>低置信度已人工复核</code></td><td>图片 / 扫描件默认强制复核；人工复核不能覆盖硬冲突</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <footer class="dev-foot">
+              <span>错题簿 v{{ app_version }} · DEVELOPER NOTES</span>
+              <span>本地优先 · 无账号 · 无云端 · 全部数据留在这台电脑</span>
+            </footer>
+          </div>
+        </section>
+
+        <!-- 整卷入库：与其它页面一样是主站里的一个 .page，侧栏常驻、随时可返回 -->
+        {% include "_codepaper_view.html" %}
+      </main>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+  <div class="modal-root" id="modalRoot" hidden></div>
+  <script src="{{ url_for('static', filename='vendor/katex/katex-0.16.11.min.js') }}"></script>
+  <!-- 下拉增强先于业务脚本：同一个 <select> 元素被保留，业务侧绑定不受影响 -->
+  <script src="{{ url_for('static', filename='js/wb-select.js', v='20261109d') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js', v=asset_version|default('20261108c')) }}"></script>
+  <script src="{{ url_for('static', filename='js/codepaper.js', v=asset_version|default('20261108c')) }}"></script>
+</body>
+</html>

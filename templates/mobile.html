@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2e251d">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <title>错题簿 · 手机拍题</title>
+  <style>
+    /* 与主系统同一套「暖纸灯下」令牌：暖米底 + 赤陶强调色，手机拍照同样护眼 */
+    :root {
+      --bg: #f5efe2;
+      --surface: #fffbf2;
+      --ink: #33291f;
+      --muted: #6d5b47;
+      --muted-2: #7d6a53;
+      --line: #e7dac4;
+      --primary: #a5522c;
+      --primary-2: #803c1e;
+      --green: #4c7647;
+      --red: #ad473c;
+      --font: "Inter", "HarmonyOS Sans SC", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 88% 4%, rgba(165, 82, 44, .14), transparent 35%),
+        radial-gradient(circle at 4% 86%, rgba(162, 112, 28, .09), transparent 32%),
+        var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; }
+    button { -webkit-appearance: none; appearance: none; }
+    svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .wrap { width: min(100%, 540px); margin: 0 auto; padding: max(22px, env(safe-area-inset-top)) 20px calc(30px + env(safe-area-inset-bottom)); }
+    .brand { display: flex; align-items: center; gap: 11px; }
+    .brand-mark { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: linear-gradient(145deg, #a5522c, #803c1e); color: var(--surface); box-shadow: 0 9px 22px rgba(165,82,44,.28); }
+    .brand-mark svg { width: 21px; height: 21px; }
+    .brand strong { display: block; font-size: 15px; letter-spacing: .3px; }
+    .brand span { display: block; color: var(--muted-2); font-size: 8px; letter-spacing: 1.6px; margin-top: 3px; }
+    .hero { padding: 36px 3px 24px; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--primary); font-size: 9px; letter-spacing: 1.8px; font-weight: 700; }
+    .eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(76,118,71,.12); }
+    .hero h1 { margin: 16px 0 0; font-size: clamp(36px, 10vw, 46px); line-height: 1.16; letter-spacing: -2px; font-weight: 800; }
+    .hero h1 span { color: var(--primary); }
+    .hero p { margin: 15px 0 0; max-width: 330px; color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+    .camera-card { position: relative; padding: 18px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: 0 18px 50px rgba(74,55,37,.11); }
+    .camera-btn {
+      position: relative; overflow: hidden; width: 100%; min-height: 178px; padding: 26px 22px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      color: var(--surface); text-align: center; border: 0; border-radius: 18px;
+      background:
+        radial-gradient(circle at 76% 10%, rgba(233,189,142,.3), transparent 32%),
+        linear-gradient(140deg, #2e251d, #6b3520 55%, #8a4526);
+      box-shadow: 0 14px 30px rgba(74,55,37,.26);
+    }
+    .camera-btn::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(rgba(255,247,233,.2) .7px, transparent .7px); background-size: 16px 16px; opacity: .25; pointer-events: none; }
+    .camera-btn:active { transform: scale(.985); }
+    .camera-icon { position: relative; z-index: 1; width: 57px; height: 57px; border-radius: 17px; display: grid; place-items: center; border: 1px solid rgba(255,247,233,.23); background: rgba(255,247,233,.1); }
+    .camera-icon svg { width: 28px; height: 28px; }
+    .camera-copy { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 5px; }
+    .camera-copy strong { font-size: 17px; letter-spacing: -.2px; }
+    .camera-copy small { color: #f8e3c9; font-size: 10.5px; }
+    .scan { position: absolute; z-index: 1; left: 30px; right: 30px; height: 1px; top: 42%; background: linear-gradient(90deg, transparent, rgba(166,201,149,.7), transparent); animation: scan 2.6s ease-in-out infinite; opacity: .55; }
+    @keyframes scan { 0%,100% { transform: translateY(-28px); opacity: .1; } 50% { transform: translateY(42px); opacity: .7; } }
+    .secondary { display: flex; justify-content: center; padding: 14px 0 1px; }
+    .album-btn { border: 0; background: transparent; color: var(--muted); font-size: 11.5px; padding: 7px 10px; }
+    .album-btn strong { color: var(--primary); font-weight: 600; }
+    .queue { margin-top: 12px; padding-top: 16px; border-top: 1px solid #f0e7d6; }
+    .queue-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
+    .queue-head strong { font-size: 12px; }
+    .queue-head span { color: var(--muted-2); font-size: 9.5px; }
+    .previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .thumb { position: relative; aspect-ratio: 1 / 1.05; border-radius: 11px; overflow: hidden; border: 1px solid var(--line); background: #f2e9d8; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb button { position: absolute; top: 5px; right: 5px; width: 23px; height: 23px; border: 0; border-radius: 50%; background: rgba(45,33,24,.7); color: var(--surface); display: grid; place-items: center; }
+    .thumb button svg { width: 12px; height: 12px; }
+    .thumb span { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; color: var(--surface); font-size: 8px; background: linear-gradient(transparent, rgba(45,33,24,.62)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .upload-btn { width: 100%; height: 52px; margin-top: 13px; border: 0; border-radius: 13px; background: var(--primary); color: var(--surface); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 10px 24px rgba(165,82,44,.24); }
+    .upload-btn:active { background: var(--primary-2); }
+    .upload-btn:disabled { opacity: .6; }
+    .upload-btn svg { width: 17px; height: 17px; }
+    .spinner { width: 15px; height: 15px; display: inline-block; border-radius: 50%; border: 2px solid rgba(255,247,233,.35); border-top-color: var(--surface); animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hint { color: var(--muted-2); font-size: 9.5px; line-height: 1.6; margin: 10px 2px 0; text-align: center; }
+    .success { text-align: center; padding: 18px 6px 7px; }
+    .success-icon { width: 62px; height: 62px; margin: 0 auto 13px; border-radius: 50%; display: grid; place-items: center; background: #eef5e8; color: var(--green); box-shadow: 0 0 0 8px rgba(76,118,71,.06); }
+    .success-icon svg { width: 30px; height: 30px; }
+    .success h2 { font-size: 17px; letter-spacing: -.3px; }
+    .success p { color: var(--muted); font-size: 11px; line-height: 1.7; margin: 7px 0 0; }
+    .success button { margin-top: 17px; height: 44px; padding: 0 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--primary); font-size: 12px; font-weight: 600; }
+    .error { margin-top: 12px; padding: 11px 13px; border-radius: 10px; background: #fbefeb; color: #8b332a; border: 1px solid #f5d9d1; font-size: 10.5px; line-height: 1.6; }
+    .app-entry { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 14px 15px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); text-decoration: none; color: var(--ink); box-shadow: 0 10px 26px rgba(74,55,37,.07); }
+    .app-entry:active { transform: scale(.99); }
+    .app-entry-icon { width: 38px; height: 38px; flex: none; border-radius: 12px; display: grid; place-items: center; background: #fbecdd; color: var(--primary); }
+    .app-entry-icon svg { width: 19px; height: 19px; }
+    .app-entry-copy { min-width: 0; flex: 1; }
+    .app-entry-copy strong { display: block; font-size: 12.5px; }
+    .app-entry-copy small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .app-entry-arrow { flex: none; color: var(--primary); font-size: 18px; }
+    .steps { margin-top: 19px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,251,242,.72); }
+    .steps h3 { margin: 0 0 12px; font-size: 11px; color: var(--ink); }
+    .steps div { display: flex; gap: 10px; margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+    .steps span { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px; background: #fbecdd; color: var(--primary); font-size: 8px; font-weight: 700; }
+    footer { color: var(--muted-2); font-size: 8.5px; text-align: center; padding: 20px 8px 0; line-height: 1.7; }
+    .hidden { display: none !important; }
+    @media (max-width: 360px) {
+      .wrap { padding-left: 14px; padding-right: 14px; }
+      .camera-btn { min-height: 160px; padding: 22px 16px; }
+      .hero h1 { font-size: 35px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="brand">
+      <span class="brand-mark">
+        <svg aria-hidden="true"><use href="#book"></use></svg>
+      </span>
+      <div><strong>错题簿</strong><span>PHONE CAMERA</span></div>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow"><i></i>已连接电脑端</div>
+      <h1>拍下这道<br><span>错题。</span></h1>
+      <p>用手机后置摄像头拍摄题目，照片会通过本地 Wi-Fi 直接发送到电脑，不会上传云端。</p>
+    </section>
+
+    <section class="camera-card">
+      <div id="capturePanel">
+        <button class="camera-btn" id="cameraBtn" type="button">
+          <span class="scan"></span>
+          <span class="camera-icon">
+            <svg aria-hidden="true"><use href="#camera"></use></svg>
+          </span>
+          <span class="camera-copy"><strong>打开相机拍摄</strong><small>让题目占满画面，文字越清晰越好</small></span>
+        </button>
+        <div class="secondary">
+          <button class="album-btn" id="albumBtn" type="button">也可以 <strong>从相册选择</strong></button>
+        </div>
+
+        <div class="queue hidden" id="queue">
+          <div class="queue-head"><strong>待发送</strong><span id="queueMeta"></span></div>
+          <div class="previews" id="previews"></div>
+          <button class="upload-btn" id="uploadBtn" type="button">
+            <svg aria-hidden="true"><use href="#upload"></use></svg><span>发送到电脑</span>
+          </button>
+          <p class="hint">发送后回到电脑端，在「图片识题」里点击「开始识别」。</p>
+        </div>
+        <div class="error hidden" id="error"></div>
+      </div>
+
+      <div class="success hidden" id="success">
+        <div class="success-icon"><svg aria-hidden="true"><use href="#check"></use></svg></div>
+        <h2>已发送到电脑</h2>
+        <p>照片正在电脑端的待识别列表里等待。<br>回到电脑上点击「开始识别」即可。</p>
+        <button type="button" id="againBtn">继续拍摄</button>
+      </div>
+    </section>
+
+    <a class="app-entry" href="/p/{{ token }}">
+      <span class="app-entry-icon"><svg aria-hidden="true"><use href="#book"></use></svg></span>
+      <span class="app-entry-copy">
+        <strong>打开完整系统 · 查看题库</strong>
+        <small>这个扫码页只负责把照片回传电脑；题库、错题本、练习在完整系统里，点这里授权后即可使用</small>
+      </span>
+      <span class="app-entry-arrow" aria-hidden="true">&rarr;</span>
+    </a>
+
+    <section class="steps">
+      <h3>拍摄小贴士</h3>
+      <div><span>01</span><p>手机和电脑要连接同一个 Wi-Fi，保持电脑端软件运行。</p></div>
+      <div><span>02</span><p>尽量正对题目拍摄，避免反光、手抖和过暗。</p></div>
+      <div><span>03</span><p>一张照片拍一道题最稳定；多题连拍也可以。</p></div>
+    </section>
+
+    <footer>照片仅通过本地局域网传输 · 错题簿不会把图片上传到任何云端</footer>
+  </div>
+
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="book" viewBox="0 0 24 24"><path d="M4 4h6a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H4z"/><path d="M20 4h-6a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h6z"/></symbol>
+    <symbol id="camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v4h16v-4"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 6.5"/></symbol>
+    <symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  </svg>
+
+  <script>
+    (() => {
+      "use strict";
+      const TOKEN = {{ token|tojson }};
+      const MAX_FILES = 8;
+      const state = { files: [], urls: [], uploading: false };
+      const $ = (selector) => document.querySelector(selector);
+      const queue = $("#queue");
+      const previews = $("#previews");
+      const errorBox = $("#error");
+      const uploadBtn = $("#uploadBtn");
+
+      // Inputs are created in JS so the markup stays compact and accessible.
+      const offscreen = "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
+      const camera = document.createElement("input");
+      camera.type = "file";
+      camera.accept = "image/*";
+      camera.setAttribute("capture", "environment");
+      camera.multiple = true;
+      camera.setAttribute("style", offscreen);
+      const album = document.createElement("input");
+      album.type = "file";
+      album.accept = "image/*";
+      album.multiple = true;
+      album.setAttribute("style", offscreen);
+      document.body.append(camera, album);
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.remove("hidden");
+      }
+      function clearError() {
+        errorBox.classList.add("hidden");
+        errorBox.textContent = "";
+      }
+      function revokeUrls() {
+        state.urls.forEach((url) => URL.revokeObjectURL(url));
+        state.urls = [];
+      }
+      function renderQueue() {
+        revokeUrls();
+        state.urls = state.files.map((file) => URL.createObjectURL(file));
+        previews.innerHTML = state.files
+          .map(
+            (file, index) => `<div class="thumb">
+              <img src="${state.urls[index]}" alt="${escapeHtml(file.name || "照片")}">
+              <button type="button" data-remove="${index}" aria-label="移除">${icon("close")}</button>
+              <span>${escapeHtml(file.name || `照片 ${index + 1}`)}</span>
+            </div>`
+          )
+          .join("");
+        queue.classList.toggle("hidden", state.files.length === 0);
+        const bytes = state.files.reduce((sum, file) => sum + file.size, 0);
+        $("#queueMeta").textContent = `${state.files.length} 张 · ${(bytes / 1024 / 1024).toFixed(1)} MB`;
+        uploadBtn.disabled = state.uploading || state.files.length === 0;
+      }
+      function icon(name) {
+        return `<svg aria-hidden="true"><use href="#${name}"></use></svg>`;
+      }
+      function escapeHtml(value) {
+        return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+      }
+      function addFiles(files) {
+        clearError();
+        const incoming = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+        const space = Math.max(0, MAX_FILES - state.files.length);
+        if (incoming.length > space) showError(`一次最多发送 ${MAX_FILES} 张照片，多出的照片已忽略。`);
+        state.files.push(...incoming.slice(0, space));
+        renderQueue();
+      }
+      async function upload() {
+        if (!state.files.length || state.uploading) return;
+        state.uploading = true;
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = `<span class="spinner"></span><span>发送中...</span>`;
+        clearError();
+        const form = new FormData();
+        state.files.forEach((file, index) => form.append("images", file, file.name || `phone_${index + 1}.jpg`));
+        try {
+          const response = await fetch(`/api/mobile/upload?token=${encodeURIComponent(TOKEN)}`, { method: "POST", body: form });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || "发送失败，请重试");
+          state.files = [];
+          renderQueue();
+          $("#capturePanel").classList.add("hidden");
+          $("#success").classList.remove("hidden");
+          if (navigator.vibrate) navigator.vibrate(40);
+        } catch (error) {
+          showError(error.message || "发送失败，请确认电脑端软件仍在运行");
+        } finally {
+          state.uploading = false;
+          uploadBtn.disabled = state.files.length === 0;
+          uploadBtn.innerHTML = `${icon("upload")}<span>发送到电脑</span>`;
+        }
+      }
+      function reset() {
+        state.files = [];
+        renderQueue();
+        $("#success").classList.add("hidden");
+        $("#capturePanel").classList.remove("hidden");
+        clearError();
+      }
+
+      camera.id = "cameraInput";
+      camera.name = "cameraInput";
+      camera.addEventListener("change", () => {
+        addFiles(camera.files);
+        camera.value = "";
+      });
+      album.id = "albumInput";
+      album.name = "albumInput";
+      album.addEventListener("change", () => {
+        addFiles(album.files);
+        album.value = "";
+      });
+
+      $("#cameraBtn").addEventListener("click", () => camera.click());
+      $("#albumBtn").addEventListener("click", () => album.click());
+      previews.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-remove]");
+        if (!button) return;
+        state.files.splice(Number(button.dataset.remove), 1);
+        renderQueue();
+      });
+      uploadBtn.addEventListener("click", upload);
+      $("#againBtn").addEventListener("click", reset);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) clearError();
+      });
+    })();
+  </script>
+</body>
+</html>

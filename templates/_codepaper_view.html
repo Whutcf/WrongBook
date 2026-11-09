@@ -1,0 +1,482 @@
+<!-- ==================================================================
+     整卷入库 / INTAKE —— 主站内的一个 .page 视图
+     ------------------------------------------------------------------
+     v1.4.0 重构：不再是「上传两份代码 → 看对照检查结果」的一次性工具。
+     v1.4.1 定规：整卷是**不可拆分**的最小复习单位。链路为
+     「录入封卷 → 入库质检 → 卷库（在『我的题库』里，一行一份）→ 开考 → 交卷判分 → 整卷错题组」：
+     一个空错，整卷进错题本；全卷全对，整卷才移出。
+     原来的对照检查降级为第 02 页签「入库质检」。
+
+     v1.4.3 重新定位：整卷入库只负责「录入 + 质检」（纯录入型工具，与图片识题并列）；
+     试卷录入后出现在「我的题库」里（一行一份），考试 / 编辑 / 改答案 / 删除都从题库那一行发起，
+     错题本「整卷错题组」可「整卷重考」。考场页签不再作为可见导航，只保留深链入口（data-cp-open="exam"）。
+
+     由 index.html 以 Jinja include 引入；外层 .page[data-page=codepaper]
+     交给 app.js 的 switchView() 统一切换，侧栏与顶栏始终常驻。
+     所有 id / class 带 cp 前缀，样式由 codepaper.css 在 .cp-embed 作用域内
+     提供，绝不污染主站其它页面。
+     ================================================================== -->
+<section class="page cp-page" data-page="codepaper" hidden aria-labelledby="cpHeading">
+  <div class="cp-embed" id="cpEmbed">
+
+    <!-- 卷首：唯一的 h1 是主站顶栏 #pageTitle，这里降级为 h2 -->
+    <header class="cp-hero cp-reveal cp-r1">
+      <div class="cp-hero-copy">
+        <h2 id="cpHeading">把卷子和答案<em>录进来。</em></h2>
+        <div class="cp-rule" aria-hidden="true"></div>
+        <p class="cp-deck">
+          <strong>一次录入，反复考。</strong>把「空白试卷」和「答案参考」交给系统，
+          答案随即被封存进卷库；之后在<strong>「我的题库」和「错题本」</strong>里随时开考，
+          交卷后逐空批改、留档成绩。
+          <b>一张卷子始终是一整组，绝不拆成单题</b> —— 只要有一个空没答对，整卷就进错题本；
+          所有空全对，整卷才移出。<b>整卷入库只负责录入与质检，考试在题库 / 错题本发起。</b>
+        </p>
+        <div class="cp-hero-actions">
+          <button id="cpBtnGoIntake" class="btn btn-primary cp-btn cp-btn-lg" type="button">
+            <svg aria-hidden="true"><use href="#i-plus"></use></svg>录入新试卷
+          </button>
+          <button id="cpBtnGoShelf" class="btn btn-ghost cp-btn cp-btn-lg" type="button" data-view="library">
+            <svg aria-hidden="true"><use href="#i-library"></use></svg>去「我的题库」
+          </button>
+          <span class="cp-hero-hint">考试入口在「我的题库」与「错题本」；整卷始终成组，绝不拆单题</span>
+        </div>
+      </div>
+      <div class="cp-hero-art" aria-hidden="true">
+        <div class="cp-art-sheet cp-art-sheet-3"></div>
+        <div class="cp-art-sheet cp-art-sheet-2"></div>
+        <div class="cp-art-sheet cp-art-sheet-1">
+          <span class="cp-art-tab">BLANK PAPER · 整卷</span>
+          <span class="cp-art-line"><i>df</i> = pd.read_csv(<b class="cp-art-blank"></b>)</span>
+          <span class="cp-art-line">f(x) = <b class="cp-art-blank"></b> · x² + 1</span>
+          <span class="cp-art-line"><b class="cp-art-blank"></b> 是太阳系中最大的行星</span>
+          <span class="cp-art-line short"></span>
+          <span class="cp-art-seal">已封存<small>SEALED</small></span>
+        </div>
+        <span class="cp-art-bookmark"></span>
+      </div>
+    </header>
+
+    <!-- 工作区页签：考场（考试）不再作为可见导航，改由「我的题库 / 错题本」深链进入 -->
+    <nav class="cp-tabs cp-reveal cp-r2" role="tablist" aria-label="整卷入库工作区">
+      <button class="cp-tab is-active" type="button" role="tab" aria-selected="true" data-cp-tab="intake" id="cpTabIntake"><i>01</i>录入试卷</button>
+      <button class="cp-tab" type="button" role="tab" aria-selected="false" data-cp-tab="audit" id="cpTabAudit"><i>02</i>入库质检</button>
+      <span class="cp-note" id="cpNote" role="status" aria-live="polite">整卷入库只负责录入与质检：答案封存进卷库后，去「我的题库」里随时开考。整卷为一组、不拆单题。</span>
+    </nav>
+
+    <!-- ============================================================
+         01 录入：这就是「把卷子和答案录进系统」的入口
+         （卷库管理已移到「我的题库」：录入的整卷会作为一行出现在题库里，
+          考试、编辑、改答案、删除都在那里完成。）
+         ============================================================ -->
+    <section class="cp-panel" data-cp-panel="intake" role="tabpanel" aria-labelledby="cpTabIntake">
+      <div class="cp-panel-head cp-panel-head--intake">
+        <div class="cp-panel-copy">
+          <h3>录入试卷与答案</h3>
+          <p>系统先做一次入库质检：识别全部空位、按模板常量段对齐标准答案，质检通过后答案封存进卷库。</p>
+        </div>
+      </div>
+
+      <div class="cp-intake-meta">
+        <label class="cp-field" for="cpTitle"><span>试卷名称</span><input id="cpTitle" type="text" maxlength="60" placeholder="例如：第三章 · 单元填空练习"></label>
+        <label class="cp-field" for="cpLang"><span>试卷类型</span>
+          <select id="cpLang">
+            <option value="通用">通用 / 混合</option>
+            <option value="代码">代码</option>
+            <option value="数学">数学 / 公式</option>
+            <option value="英语">英语 / 外语</option>
+            <option value="文史">语文 / 文史</option>
+            <option value="其它">其它</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="cp-papers">
+        <div class="cp-paper">
+          <div class="cp-paper-tab"><span class="cp-dot" aria-hidden="true"></span>空白试卷<small>BLANK PAPER</small></div>
+          <div class="cp-paper-body">
+            <label class="sr-only" for="cpPaper">空白试卷</label>
+            <textarea id="cpPaper" spellcheck="false" placeholder="把试卷粘贴到这里，空位保留 ____&#10;&#10;例如：&#10;data = pd.read_csv(____)&#10;f(x) = ____ · x² + 1&#10;____ 是太阳系中最大的行星"></textarea>
+          </div>
+          <div class="cp-paper-foot">连续下划线 ____ 即为一个空位 · 代码 / 公式 / 文字均可 · 题目无需编号</div>
+        </div>
+        <div class="cp-paper">
+          <div class="cp-paper-tab alt"><span class="cp-dot" aria-hidden="true"></span>答案参考<small>ANSWER KEY · 封存</small></div>
+          <div class="cp-paper-body">
+            <label class="sr-only" for="cpAnswer">答案参考</label>
+            <textarea id="cpAnswer" spellcheck="false" placeholder="把填好答案的完整内容粘贴到这里&#10;&#10;红色标注可有可无，系统会自动过滤噪声"></textarea>
+          </div>
+          <div class="cp-paper-foot">填好答案的完整内容即可 · 答案不带空格 · 排版可不同</div>
+        </div>
+      </div>
+
+      <div class="cp-control-row">
+        <label class="cp-switch" title="总闸：勾选后本次解析才允许「整卷解析大模型」介入。它只在规则没找齐答案时补齐那几个缺失空，规则找齐则零调用、不消耗额度；不参与拆卷与标题识别。不勾选则完全离线。设置里的「② 整卷解析大模型」只是「是否可用」。">
+          <input type="checkbox" id="cpUseLlm">
+          <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
+          <span class="cp-switch-text">启用大模型</span>
+        </label>
+        <button id="cpBtnParse" class="btn btn-primary cp-btn" type="button">解析并封卷入库</button>
+        <button id="cpBtnClear" class="btn btn-ghost cp-btn" type="button">清空</button>
+        <button id="cpBtnLlmAssist" class="btn btn-ghost cp-btn cp-btn-llm-assist" type="button" hidden>用模型辅助解析 · 可选</button>
+        <button id="cpBtnAbort" class="btn cp-btn cp-btn-abort" type="button" hidden>终止调用</button>
+        <span class="cp-llm-hint" id="cpLlmHint">读取模型配置中…</span>
+      </div>
+      <p class="cp-tip" id="cpTip" role="status" aria-live="polite">填写两侧内容后，点「解析并封卷入库」即可。</p>
+
+      <!-- 文件上传：改为常驻醒目卡片（原折叠区默认收起，导致「不仔细看不知道有上传功能」） -->
+      <section class="cp-upload-card" aria-label="上传两份文件录入">
+        <div class="cp-upload-head">
+          <span class="cp-upload-ico" aria-hidden="true">↑</span>
+          <div class="cp-upload-head-copy">
+            <h4>上传两份文件录入</h4>
+            <p>和左侧粘贴二选一即可：选好<strong>试卷文件</strong>与<strong>答案文件</strong>各一份，系统自动识别空位、对齐答案并封卷入库。</p>
+          </div>
+        </div>
+
+        <div class="cp-format-guide" aria-label="上传文件支持的格式范围">
+          <div class="cp-format-col">
+            <span class="cp-format-head">试卷文件 · 支持</span>
+            <ul class="cp-format-chips">
+              <li class="cp-chip cp-chip--key">Jupyter · .ipynb</li>
+              <li class="cp-chip">Word · .docx</li>
+              <li class="cp-chip">PDF · .pdf</li>
+              <li class="cp-chip">图片 · .png / .jpg</li>
+              <li class="cp-chip">文本 · .txt / .md / .py</li>
+            </ul>
+            <p class="cp-format-hint">Jupyter 试卷用连续下划线 <code>____</code> 标记空位</p>
+          </div>
+          <div class="cp-format-col">
+            <span class="cp-format-head">答案文件 · 支持</span>
+            <ul class="cp-format-chips">
+              <li class="cp-chip">Word · .docx</li>
+              <li class="cp-chip">PDF · .pdf</li>
+              <li class="cp-chip">图片 · .png / .jpg</li>
+              <li class="cp-chip">文本 · .txt / .md / .py</li>
+            </ul>
+            <p class="cp-format-hint">整本答案 PDF 含多套时，自动定位对应区段</p>
+          </div>
+        </div>
+
+        <div class="cp-dropzone" id="cpDropzone" role="group" aria-label="拖拽上传区域">
+          <!-- 三栏 × 三行栅格：标签 / 控件 / 状态各占一行、共用同一条基线。
+               旧版用 flex + align-items:end，文件名一旦换行就会把整列顶高，
+               导致两个选择框高低错开、提交按钮被挤到文件名那一行的高度。 -->
+          <div class="cp-upload">
+            <label class="cp-upload-label cp-u-paper" for="cpFpaper">试卷文件 / PAPER</label>
+            <label class="cp-upload-label cp-u-answer" for="cpFanswer">答案文件 / ANSWER</label>
+            <span class="cp-upload-label cp-u-submit" aria-hidden="true"></span>
+
+            <input class="cp-upload-input cp-u-paper" id="cpFpaper" type="file" accept=".ipynb,.docx,.pdf,.txt,.md,.py,.png,.jpg,.jpeg">
+            <input class="cp-upload-input cp-u-answer" id="cpFanswer" type="file" accept=".docx,.pdf,.txt,.md,.py,.png,.jpg,.jpeg">
+            <div class="cp-upload-actions cp-u-submit" id="cpUploadActions">
+              <button id="cpBtnUpload" class="btn btn-primary cp-btn cp-upload-submit" type="button" disabled
+                title="请先同时选择「试卷文件」与「答案文件」，两份都选好后可上传解析并封卷入库；答案随即封存。">上传解析并入库</button>
+              <button id="cpBtnClearUpload" class="btn btn-ghost btn-sm cp-btn cp-upload-clear" type="button" disabled
+                title="清空调已选择的试卷与答案文件（解析入库后文件已不再需要）">清空已选文件</button>
+            </div>
+
+            <span class="cp-file-name cp-u-paper" id="cpFpaperName" aria-live="polite"></span>
+            <span class="cp-file-name cp-u-answer" id="cpFanswerName" aria-live="polite"></span>
+            <span class="cp-upload-hint cp-u-submit" id="cpUploadHint" role="status" aria-live="polite">请先选择「试卷文件」与「答案文件」（两份都要）</span>
+          </div>
+          <p class="cp-dropzone-hint" id="cpDropHint">把两份文件拖到此处，或点上面的「选择文件」</p>
+        </div>
+
+        <!-- 答案 PDF 含多套试卷时：定位到当前这份 ipynb 对应的答案区段 -->
+        <div class="cp-section-locator" id="cpSectionLocator" hidden>
+          <span class="cp-section-locator-label">答案区段定位</span>
+          <p class="cp-section-locator-text" id="cpSectionLocatorText"></p>
+          <div class="cp-section-locator-row">
+            <select id="cpSectionSelect" class="cp-select" aria-label="选择答案区段"></select>
+            <button id="cpBtnConfirmSection" class="btn btn-primary btn-sm cp-btn" type="button">确认并入库</button>
+            <button id="cpBtnCancelSection" class="btn btn-ghost btn-sm cp-btn" type="button">取消</button>
+          </div>
+        </div>
+        <p class="cp-fold-note">Word 下划线样式与 PDF 文本层／红色字体可精确解析；图片支持几何横线检测与红色标注辅助证据。Jupyter(.ipynb) 试卷用连续下划线 ____ 标记空位即可。图片来源一律为低置信度，需在「入库质检」页确认人工复核后才会判定封卷可用。</p>
+      </section>
+
+      <!-- 封卷回执：只报结果，不把整份对照表怼到用户脸上 -->
+      <div id="cpIntakeReport" class="cp-intake-report" hidden>
+        <div class="cp-intake-seal" id="cpIntakeSeal" aria-hidden="true">封</div>
+          <div class="cp-intake-report-copy">
+            <span class="cp-intake-label">试卷名称</span>
+            <div class="cp-intake-title-row">
+              <h4 id="cpIntakeTitle">已入库</h4>
+              <button id="cpBtnIntakeRename" class="cp-link-btn" type="button" title="解析出的名称若不对，可直接在此改正，不重新封卷">✎ 改名</button>
+            </div>
+            <p class="cp-intake-name-note" id="cpIntakeNameNote" hidden></p>
+            <p id="cpIntakeSummary"></p>
+            <p class="cp-intake-llm" id="cpIntakeLlm" hidden></p>
+            <p class="cp-intake-review-note" id="cpIntakeReviewNote" hidden></p>
+            <button id="cpBtnIntakeReview" class="btn btn-primary cp-btn" type="button" hidden>确认人工审核通过并保存</button>
+          </div>
+        <div class="cp-intake-report-actions">
+          <button id="cpBtnIntakeShelf" class="btn btn-primary cp-btn" type="button" data-view="library">去「我的题库」开考</button>
+          <button id="cpBtnIntakeAudit" class="btn btn-ghost cp-btn" type="button">看质检明细</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         考场面板（深链入口：由「我的题库 / 错题本」的开考按钮进入，不作为页签）
+         ============================================================ -->
+    <section class="cp-panel" data-cp-panel="exam" role="tabpanel" aria-labelledby="cpTabExam" hidden>
+      <!-- 选卷 -->
+      <div id="cpExamPicker">
+        <div class="cp-panel-head">
+          <div class="cp-panel-copy">
+            <h3>选一份卷子开考</h3>
+            <p>只有质检通过、答案已封存的卷子才能作答；标记「待复核」的卷子考试与刷题都未开放，请先到「质检判定」逐空订正并封卷。考场上不显示标准答案，交卷后才揭晓。</p>
+          </div>
+        </div>
+        <div id="cpExamPickerList" class="cp-picker-list"></div>
+        <div id="cpExamPickerEmpty" class="cp-empty-state" hidden>
+          <span class="cp-empty-num" aria-hidden="true">00</span>
+          <h4>还没有可考的卷子</h4>
+          <p>先去「录入试卷」封存一份，即可体验完整考试流程。</p>
+          <div class="cp-empty-actions">
+            <button class="btn btn-primary cp-btn" type="button" data-cp-go="intake">录入试卷</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 答题纸 -->
+      <div id="cpExamSheet" class="cp-exam-sheet" hidden>
+        <div class="cp-exam-bar">
+          <div class="cp-exam-bar-copy">
+            <span class="cp-exam-label">NOW SITTING / 正在作答</span>
+            <h3 id="cpExamTitle">—</h3>
+          </div>
+          <div class="cp-exam-bar-meta">
+            <span>已填 <b id="cpExamFilled">0</b> / <b id="cpExamTotal">0</b></span>
+            <span>用时 <b id="cpExamClock">00:00</b></span>
+            <button id="cpBtnLeaveExam" class="btn btn-ghost cp-btn" type="button">离开考场</button>
+          </div>
+        </div>
+        <div class="cp-exam-progress" aria-hidden="true"><i id="cpExamProgressBar"></i></div>
+
+        <div class="cp-exam-modes" role="group" aria-label="答题模式">
+          <button type="button" class="cp-mode-btn is-active" data-mode="exam">考试模式</button>
+          <button type="button" class="cp-mode-btn" data-mode="practice">刷题模式</button>
+          <span class="cp-exam-mode-hint" id="cpExamModeHint"></span>
+        </div>
+        <div class="cp-exam-empty-alert" id="cpExamEmptyAlert" hidden></div>
+
+        <p id="cpExamRetryNote" class="cp-exam-retry-note" hidden></p>
+
+        <div class="cp-blank-nav" id="cpBlankNav" aria-label="空位导航"></div>
+
+        <div class="cp-answer-sheet">
+          <div class="cp-sheet-head"><span>ANSWER SHEET / 答题纸</span><span>答案已封存 · 交卷后揭晓</span></div>
+          <div id="cpExamCode" class="cp-exam-code"></div>
+        </div>
+
+        <div class="cp-exam-foot">
+          <p id="cpExamFootNote">整卷作答，全部填完再交卷；中途离开不会保存本次作答。</p>
+          <button id="cpBtnSubmit" class="btn btn-primary cp-btn cp-btn-lg" type="button">交卷并判分</button>
+        </div>
+      </div>
+
+      <!-- 成绩单 -->
+      <div id="cpExamReport" class="cp-exam-report" hidden>
+        <div class="cp-score-hero">
+          <div class="cp-score-copy">
+            <div class="cp-score-line"><b id="cpScoreValue">0</b><span>分</span></div>
+            <p id="cpScoreLabel">—</p>
+          </div>
+          <div class="cp-seal bad" id="cpExamSeal" aria-hidden="true"><span id="cpExamSealText">待启封<small>SEALED</small></span></div>
+        </div>
+        <div class="cp-stats" id="cpScoreStats"></div>
+        <h4 class="cp-subhead">逐空批改</h4>
+        <div class="cp-table-scroll">
+          <table>
+            <thead><tr><th>空位</th><th>上下文</th><th>你的答案</th><th>标准答案</th><th>结果</th></tr></thead>
+            <tbody id="cpScoreRows"></tbody>
+          </table>
+        </div>
+        <div class="cp-table-pager" id="cpScorePager" hidden></div>
+        <!-- 整卷错题组回执：一组就是一份卷，错一格等于整组待攻克 -->
+        <div id="cpWrongState" class="cp-wrong-state" role="status" aria-live="polite" hidden>
+          <span class="cp-wrong-state-seal" id="cpWrongStateSeal" aria-hidden="true">待启封</span>
+          <div class="cp-wrong-state-copy">
+            <strong id="cpWrongStateTitle">—</strong>
+            <p id="cpWrongStateText">—</p>
+          </div>
+          <div class="cp-wrong-state-grid" id="cpWrongStateGrid" aria-label="本卷逐空结果格阵"></div>
+        </div>
+        <div class="cp-report-actions">
+          <button id="cpBtnRetry" class="btn btn-primary cp-btn" type="button">整卷重考一次</button>
+          <button id="cpBtnViewWrong" class="btn btn-ghost cp-btn" type="button" data-view="wrong">去错题本看这一组</button>
+          <button id="cpBtnBackShelf" class="btn btn-ghost cp-btn" type="button">返回卷库</button>
+        </div>
+        <div class="cp-history">
+          <h4 class="cp-subhead">这份卷子的历次成绩</h4>
+          <div id="cpHistoryList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         入库质检（即第 02 页签「入库质检」）：原「对照检查」，保留全部能力与人工复核闭环
+         ============================================================ -->
+    <section class="cp-panel" data-cp-panel="audit" role="tabpanel" aria-labelledby="cpTabAudit" hidden>
+      <div class="cp-panel-head">
+        <div class="cp-panel-copy">
+          <h3>答案对齐校验</h3>
+          <p>这一步检查的是「答案参考有没有把卷子填对」，属于入库前的质量检查，<b>不是考试</b>。图片来源请在这里完成人工复核。</p>
+        </div>
+        <div class="cp-audit-picker">
+          <label class="sr-only" for="cpAuditSelect">选择卷子</label>
+          <select id="cpAuditSelect"></select>
+          <button id="cpBtnAuditAnswerBlock" class="btn btn-ghost cp-btn cp-answer-block-btn" type="button"
+            title="查看这套卷子关联的全部参考答案原文（可跨页）">参考答案原文</button>
+        </div>
+      </div>
+
+      <section class="cp-block cp-result" id="cpResultCard" hidden aria-labelledby="cpResultHead">
+        <div class="cp-seal bad" id="cpSeal" aria-hidden="true">
+          <span id="cpSealText">待复核<small>REVIEW REQUIRED</small></span>
+        </div>
+        <div class="cp-result-head">
+          <span class="cp-block-no">02</span>
+          <h3 id="cpResultHead">质检判定</h3>
+          <span class="cp-badge bad" id="cpBadge">待人工复核</span>
+          <span class="cp-block-rule" aria-hidden="true"></span>
+        </div>
+        <p class="cp-status-line" id="cpStatusLine"></p>
+        <p class="cp-llm-note cp-llm-note--card" id="cpLlmNote" hidden></p>
+
+        <div class="cp-review-box" id="cpReviewBox" hidden>
+          <div class="cp-review-copy">
+            <strong>图片来源需要人工复核</strong>
+            <p>空位由几何检测得出，属低置信度证据。请对照原卷逐空确认后提交；人工复核不会覆盖数量不符、未对齐或语法角色不匹配等硬冲突。</p>
+          </div>
+          <button id="cpBtnReview" class="btn btn-primary cp-btn" type="button">确认已完成人工复核</button>
+        </div>
+
+        <div class="cp-stats" id="cpSummary"></div>
+        <div class="cp-conds" id="cpConds"></div>
+        <div id="cpWarnings"></div>
+
+        <div class="cp-ans-wrap" id="cpAnsWrap" hidden>
+          <h4 class="cp-subhead">标准答案清单</h4>
+          <div class="cp-ans-list" id="cpAnsList"></div>
+        </div>
+
+        <h4 class="cp-subhead">逐空明细</h4>
+        <div class="cp-table-scroll">
+          <table>
+            <thead><tr><th>空位</th><th>标准答案</th><th>语法角色</th><th>结果</th><th>操作</th></tr></thead>
+            <tbody id="cpRows"></tbody>
+          </table>
+        </div>
+        <div class="cp-audit-edit-actions">
+          <button id="cpBtnSaveAudit" class="btn btn-primary cp-btn" type="button">保存修改</button>
+          <span class="cp-audit-edit-hint">「标准答案」列点击可展开完整内容并直接编辑（内容过长也不怕）；改好点「保存」回到明细，再点这里统一写卷库并重判质检。</span>
+        </div>
+
+        <details class="cp-filled-fold" id="cpFilledFold">
+          <summary class="cp-filled-summary">
+            <span class="cp-filled-title">回填后的内容</span>
+            <span class="cp-filled-hint">展开查看完整代码 · 可一键复制</span>
+            <span class="cp-filled-rule" aria-hidden="true"></span>
+            <span class="cp-filled-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="cp-code-wrap">
+            <button id="cpBtnCopy" class="cp-copy-btn" type="button">复制</button>
+            <pre id="cpFilled"></pre>
+          </div>
+        </details>
+      </section>
+      <div id="cpAuditEmpty" class="cp-empty-state" hidden>
+        <span class="cp-empty-num" aria-hidden="true">—</span>
+        <h4>这份卷子还没有质检记录</h4>
+        <p>回到「录入试卷」重新解析一次即可生成质检明细。</p>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         逐空改答案（深链入口：由「我的题库」行内「改答案」按钮进入）
+         ============================================================ -->
+    <section class="cp-panel" data-cp-panel="editAnswers" role="tabpanel" hidden>
+      <div class="cp-panel-head">
+        <div class="cp-panel-copy">
+          <h3>订正某一空的答案</h3>
+          <p class="cp-edit-answers-paper" id="cpEditAnswersPaper"></p>
+          <p>不改整份卷，只订正被抽错的那几个空。改完立即对后续开考生效；「整卷成组」的进出规则不受影响。</p>
+        </div>
+        <div class="cp-panel-actions">
+          <button id="cpBtnEditAnswerBlock" class="btn btn-ghost cp-btn cp-answer-block-btn" type="button"
+            title="查看这套卷子关联的全部参考答案原文（可跨页）">参考答案原文</button>
+          <button id="cpBtnSaveAnswers" class="btn btn-primary cp-btn" type="button">保存答案</button>
+          <button id="cpBtnCancelAnswers" class="btn btn-ghost cp-btn" type="button">取消</button>
+        </div>
+      </div>
+      <div id="cpEditAnswersList" class="cp-edit-answers"></div>
+    </section>
+
+    <!-- 参考答案原文查看器：一次展示这套卷子关联的全部参考答案（可跨页） -->
+    <div id="cpSliceModal" class="cp-slice-modal" hidden>
+      <div class="cp-slice-backdrop" data-cp-slice-close></div>
+      <div class="cp-slice-dialog" role="dialog" aria-modal="true" aria-label="参考答案原文">
+        <div class="cp-slice-head">
+          <span id="cpSliceTitle">参考答案原文</span>
+          <a id="cpSliceDownload" class="cp-slice-download" href="#" target="_blank" rel="noopener">在新标签打开 ↗</a>
+          <button type="button" class="cp-slice-close" data-cp-slice-close aria-label="关闭">✕</button>
+        </div>
+        <div class="cp-slice-body">
+          <img id="cpSliceImg" alt="本卷关联的全部参考答案原文" />
+          <p id="cpSliceFallback" class="cp-slice-fallback" hidden>无法显示参考答案（该卷未保留上传的答案 PDF，或来源为纯文本粘贴，没有页面坐标）。</p>
+        </div>
+        <p class="cp-slice-hint">按页裁出这套卷子关联的完整参考答案代码块；对照此图订正未解析成功的空。</p>
+      </div>
+    </div>
+
+    <!-- 入库质检「标准答案」列：点击展开完整内容并就地编辑，保存写回该空答案 -->
+    <div id="cpAnsEditModal" class="cp-ans-modal" hidden>
+      <div class="cp-ans-backdrop" data-cp-ans-close></div>
+      <div class="cp-ans-dialog" role="dialog" aria-modal="true" aria-label="编辑标准答案">
+        <div class="cp-ans-head">
+          <span class="cp-ans-head-title">编辑标准答案 <b id="cpAnsEditNo"></b></span>
+          <span class="cp-ans-head-count" id="cpAnsCharCount">0 字</span>
+          <button type="button" class="cp-ans-close" data-cp-ans-close aria-label="关闭">✕</button>
+        </div>
+        <div class="cp-ans-body">
+          <textarea id="cpAnsEditText" class="cp-ans-textarea" spellcheck="false"
+            placeholder="在此输入该空的标准答案（支持多行）。保存后会回到逐空明细，再点「保存修改」才会写进卷库。"></textarea>
+        </div>
+        <div class="cp-ans-foot">
+          <span class="cp-ans-foot-hint">保存后仅更新本行内容；点左下角「保存修改」才会正式写入卷库并重算质检。</span>
+          <span class="cp-ans-foot-actions">
+            <button type="button" class="btn btn-ghost cp-btn" data-cp-ans-close>取消</button>
+            <button type="button" class="btn btn-primary cp-btn" id="cpAnsEditSave">保存</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 逐空改答案：答案过长无法在行内完整展示/填写时，自动弹出完整编辑对话框（参考入库质检标注答案编辑） -->
+    <div id="cpEditAnsModal" class="cp-ans-modal" hidden>
+      <div class="cp-ans-backdrop" data-cp-editans-close></div>
+      <div class="cp-ans-dialog" role="dialog" aria-modal="true" aria-label="编辑答案">
+        <div class="cp-ans-head">
+          <span class="cp-ans-head-title">编辑答案 <b id="cpEditAnsNo"></b></span>
+          <span class="cp-ans-head-count" id="cpEditAnsCharCount">0 字</span>
+          <button type="button" class="cp-ans-close" data-cp-editans-close aria-label="关闭">✕</button>
+        </div>
+        <div class="cp-ans-body">
+          <textarea id="cpEditAnsText" class="cp-ans-textarea" spellcheck="false"
+            placeholder="在此输入该空的答案（支持多行）。保存后会写回该空；改完点「保存答案」才会正式写进卷库。"></textarea>
+        </div>
+        <div class="cp-ans-foot">
+          <span class="cp-ans-foot-hint">保存后更新该空答案；内容较长时在此可完整查看与录入。</span>
+          <span class="cp-ans-foot-actions">
+            <button type="button" class="btn btn-ghost cp-btn" data-cp-editans-close>取消</button>
+            <button type="button" class="btn btn-primary cp-btn" id="cpEditAnsSave">保存</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
