@@ -1190,6 +1190,58 @@ def seed_demo_paper():
         conn.close()
 
 
+# 「编辑保存」协议版本。服务以 use_reloader=False 常驻，后端改代码后旧进程不会
+# 自动更新；静态 JS 却每次刷新都读磁盘最新版。前后端错配时，旧后端会把编辑保存
+# 当整卷重解析并新建 run，把展示副本里的串位文本写成权威答案（2026-11-10 #51
+# 事故：run 79 → 89，B2 由 data.head() 变成一句说明文字，封存被打回待复核）。
+# 详情接口回显该版本，PUT 必须带同版本标记；任一侧过旧都拒绝写入而不是静默污染。
+EDIT_SCHEMA = 3
+
+
+def _split_template(template: str) -> tuple[list[str], list[int]] | None:
+    """把 ``{{n}}`` 模板拆成「固定段序列」与「空位编号序列」。"""
+    parts = re.split(r"(\{\{\d+\}\})", template)
+    segs = [p for p in parts if not re.fullmatch(r"\{\{\d+\}\}", p)]
+    nos = [
+        int(m.group(1))
+        for p in parts
+        for m in [re.fullmatch(r"\{\{(\d+)\}\}", p)]
+        if m
+    ]
+    if not nos or len(segs) != len(nos) + 1:
+        return None
+    return segs, nos
+
+
+def _extract_blank_values(template: str, text: str) -> dict[int, str] | None:
+    """按模板固定段在答案原文里顺序定位，取出每个空位**实际显示**的值。
+
+    纯字符串定位，不走 ``core.align``，因此没有解析漂移（旧实现用双对齐反推差异，
+    实测会把未改动的空误判成变化、写错权威答案）。用户只在末尾加注释、或改了某个
+    空的内容，都能稳定定位；固定段被改动（结构变化）时返回 None，调用方保守处理。
+    """
+    split = _split_template(template)
+    if split is None:
+        return None
+    segs, nos = split
+    pos = 0
+    shown: dict[int, str] = {}
+    for i, no in enumerate(nos):
+        anchor = text.find(segs[i], pos)
+        if anchor < 0:
+            return None
+        start = anchor + len(segs[i])
+        pos = start
+        # 模板末尾若还有固定文本，必须把它之前的位置作为该空的结束；
+        # 否则用户在末尾追加的注释会被误当成最后一个空的答案写进权威答案。
+        nxt = segs[i + 1] if i + 1 < len(segs) else ""
+        end = text.find(nxt, pos) if nxt else len(text)
+        if end < 0:
+            return None
+        shown[no] = text[start:end]
+    return shown
+
+
 def _reference_from_checks(run: dict) -> str:
     """编辑页「答案参考」的权威回显源，与「改答案」入口同源。
 
@@ -1199,30 +1251,31 @@ def _reference_from_checks(run: dict) -> str:
     「改答案」读 ``blank_checks.filled_raw``，「编辑」却直接读 code_filled，
     两个入口因此显示不同答案。
 
-    处理分两种：
-    - code_filled 里逐空显示值与权威答案不一致（历史串位）→ 按 ``{{n}} ↔
-      blank_no`` 用当前 checks 重建，串位被纠正；
-    - 已经一致（用户在本系统里保存过，可能还追加了模板外内容）→ 原样返回
-      code_filled，保证「保存 → 刷新 → 再次打开」内容不回滚、不被重建覆盖。
+    逐空严格判定：把 code_filled 按模板固定段切分，取出每个 ``{{n}}`` 位置的
+    显示值，与 checks 权威答案逐一比对。**不能**用「答案字符串在全文里出现过」
+    这种弱判据——同一个片段常在别处出现，串位数据会被误判成「已一致」而原样
+    返回错误原文（上一轮修复失效的原因之一）。
+    - 全部一致（用户在本系统保存过，可能追加了模板外内容）→ 原样返回，
+      保证「保存 → 刷新 → 再次打开」不回滚；
+    - 有空不一致 / 无法切分 → 按 ``{{n}} ↔ blank_no`` 重建纠正串位。
 
     只作为附加字段返回，不改 code_filled 本身；复习 / 质检 / 历史等其它展示不变。
     """
     template = run.get("code_template") or ""
     by_no = {
-        int(c["blank_no"]): (c.get("filled_raw") or "")
+        int(c["blank_no"]): (c.get("filled_raw") or "").strip()
         for c in (run.get("checks") or [])
     }
     reference = core.fill(template, by_no)
     current = run.get("code_filled") or ""
     if not template or not by_no or not current:
         return reference
-    # 已规范化（用户在本系统保存过）：每个非空权威答案都能在原文里找到。
-    # 原样返回，保留用户追加的模板外内容，保证「保存 → 刷新 → 再次打开」不回滚。
-    # 用内容判定而非再次 align，避免解析漂移把正常原文误判成串位。
-    if all((not v) or (v in current) for v in by_no.values()):
-        return current
-    # 有权威答案缺席 → 历史回填把它串位成了别的文本，按 {{n}} 映射重建纠正。
-    return reference
+    shown = _extract_blank_values(template, current)
+    if shown is None or any(
+        shown.get(n, "").strip() != (v or "").strip() for n, v in by_no.items()
+    ):
+        return reference
+    return current
 
 
 def _attach_reference(paper):
@@ -1240,7 +1293,11 @@ def paper_detail(paper_id: int):
         paper = store.get_paper(conn, paper_id)
         if paper is None:
             return jsonify({"ok": False, "error": "卷子不存在"}), 404
-        return jsonify({"ok": True, "paper": _attach_reference(paper)})
+        return jsonify({
+            "ok": True,
+            "edit_schema": EDIT_SCHEMA,   # 前端编辑入口靠它识别后端是否已重启到新版
+            "paper": _attach_reference(paper),
+        })
     finally:
         conn.close()
 
@@ -1283,63 +1340,38 @@ def papers_by_file():
 def _save_answer_reference(
     conn, paper, run, *, paper_text, answer_text, title, language
 ):
-    """「保存到这份卷子」：以用户提交的**答案参考原文**为唯一权威，原样持久化。
+    """「保存到这份卷子」：原文原样持久化 + 逐空严格比对，绝不重新解析整卷。
 
-    上一版把编辑保存窄化成「反推差异空 → core.fill 重建原文」，三个假设都不成立：
-      ① 改动可能不在空位里（注释、排版、固定代码），align 识别不到就一行都不写，
-         却返回 200「已保存：未检测到答案变化」——用户看到成功但刷新仍是旧内容；
-      ② 只在识别出空位差异时才写库，且写的是 core.fill(template, 权威答案) 的
-         重建结果，用户追加的注释 / 排版等模板外内容会被抹掉；
-      ③ paper_text 一变就 save_result 新建 run，已封存被打回待复核、人工答案漂移。
+    这一版彻底移除 ``core.align`` 双对齐反推差异：解析对齐本身有漂移，实测会把
+    「未作任何改动」也反推出差异空，把展示副本里的串位文本写回权威答案
+    （2026-11-10 #51 事故）。现在只用模板固定段做**纯字符串切分**定位每个
+    ``{{n}}`` 位置，逐空与 ``blank_checks.filled_raw`` 比对：
 
-    现在：答案参考原文**恒写**（verify_runs / code_blocks.code_filled），绝不重建；
-    空位答案只是从原文派生的副产品，用同一基准的双对齐取差异同步，保证考试判分跟上。
-    试卷原文若变化且空位结构一致，只更新模板（保留原空位编号）；一律不新建 run、
-    不整卷重解析、不重算封卷状态。历史 run、考试记录、其它卷与题库原始数据保持原样。
+    - 原文 = 按当前权威答案重建的结果（允许尾部追加内容）→ 差异空才是用户真正
+      改动的空，只把这些空写回，其它空一律不动；
+    - 原文含中间插入 / 固定代码改动，无法由逐空替换解释 → **明确拒绝**，避免把
+      注释、排版误写进某个空的权威答案，也不留下「保存了却回显丢失」的不一致；
+    - 完全未改动 → 纯 no-op，一次库都不写。
 
-    所有写入共用一个事务，任一步失败整体回滚，绝不留下半截数据。
+    试卷原文只有空位结构一致时才更新模板；一律不新建 run、不整卷重解析、不改封卷
+    状态。历史 run、考试记录、其它卷与题库原始数据保持原样。所有写入单事务。
     """
     paper_id = int(paper["id"])
     run_id = int(paper["run_id"])
     template = run.get("code_template") or ""
-    old_map = {
-        int(c["blank_no"]): (c["filled_raw"] or "").strip()
+    by_no = {
+        int(c["blank_no"]): (c.get("filled_raw") or "").strip()
         for c in (run.get("checks") or [])
     }
-    # 双对齐的「改前原文」必须与编辑框载入值同源（权威答案重建值）。
-    # 若仍读历史 code_filled，串位的空会被当成「用户改动」误写回权威答案。
-    old_filled = _reference_from_checks(run)
-    if not old_map or not template:
+    if not by_no or not template:
         raise ValueError("这份卷子还没有可订正的答案空位，请先在「入库质检」完成封卷。")
+    old_filled = run.get("code_filled") or ""
 
-    # 对齐基准恒取当前 run 的模板，不受用户是否改了试卷原文影响：两次 align
-    # 用同一份基准，共有的抽取漂移互相抵消，剩下的差异才是用户真正动过的空。
     base_paper_text = re.sub(r"\{\{\d+\}\}", "____", template).strip()
-    paper_doc = ingest.from_text(base_paper_text, "paper", "text", "paper-base")
-    base = core.align(
-        paper_doc, ingest.from_text(old_filled, "answer", "text", "answer-base"), []
-    )
-    cand = core.align(
-        paper_doc, ingest.from_text(answer_text, "answer", "text", "answer-cand"), []
-    )
-    base_map = {c.blank_no: (c.filled_raw or "").strip() for c in base.checks}
-    cand_map = {c.blank_no: (c.filled_raw or "").strip() for c in cand.checks}
-    if set(base_map) != set(old_map) or set(cand_map) != set(old_map):
-        raise ValueError(
-            "改后的答案参考无法与当前卷子的空位一一对应（空位数或顺序发生变化）。"
-            "已取消保存，原卷未做任何改动；如需调整试卷结构，请用「重新上传文件重封卷」。"
-        )
 
-    # 双重条件：① 相对「改前原文对齐」有差异；② 相对当前 run 的权威答案也不同。
-    # 只写最终值确实变化的空，避免把无关空算进改动、也避免无意义的写库。
-    edits = [
-        {"blank_no": no, "raw": cand_map[no]}
-        for no in sorted(old_map)
-        if cand_map[no] != base_map[no] and cand_map[no] != old_map[no]
-    ]
-
-    # 试卷原文改动：仅在空位数量与编号完全一致时更新模板，保持原有空位编号；
-    # 结构变化属于「重封卷」，明确拒绝并提示走文件通道，避免产生不一致脏数据。
+    # 试卷原文改动：仅在空位数量一致时更新模板（保留原空位编号）；结构变化属于
+    # 重封卷，明确拒绝。先算出生效模板，逐空切分用它，用户同步改了固定代码时
+    # 也能正确定位，避免把固定代码差异误判成答案改动。
     nos = [int(x) for x in re.findall(r"\{\{(\d+)\}\}", template)]
     new_template = None
     if (paper_text or "").strip() != base_paper_text:
@@ -1352,35 +1384,122 @@ def _save_answer_reference(
         candidate = re.sub(r"____", lambda _m: "{{%d}}" % next(it), paper_text)
         if candidate != template:
             new_template = candidate
+    # 优先用「当前模板」切分（编辑页右侧答案参考默认基于它）。用户只改左侧试卷
+    # 原文时，两侧固定代码会暂时不一致；用户把两侧一起改过时则用新模板切分。
+    # 两种情况都支持，避免「只改试卷原文就被拒绝」或「固定代码不同步」。
+    effective_template = template
+    shown = _extract_blank_values(template, answer_text)
+    split_on_new = False
+    if shown is None and new_template is not None:
+        shown = _extract_blank_values(new_template, answer_text)
+        if shown is not None:
+            effective_template = new_template
+            split_on_new = True
+    if shown is None or set(shown) != set(by_no):
+        raise ValueError(
+            "答案参考的固定代码与当前卷子无法逐空对应，已取消保存（原卷未做任何改动）。"
+            "如需增删空位或修改试卷结构，请用「重新上传文件重封卷」。"
+        )
+    # 历史展示副本防护：提交内容里若仍带着 code_filled 的串位值（与权威答案不同、
+    # 却与历史副本逐字相同），说明这是旧版编辑页 / 浏览器缓存提交的，不是用户主动
+    # 改的空；写回会连带污染其它空（#33 实测只改 B1 会把 B12 也写成串位文本）。
+    historical = _extract_blank_values(effective_template, old_filled) or {}
+    stale = [
+        no for no, val in shown.items()
+        if val.strip() != by_no[no]
+        and historical.get(no, "").strip() == val.strip()
+        and historical.get(no, "").strip() != by_no[no]
+    ]
+    if stale:
+        raise ValueError(
+            "答案参考里仍含有历史展示副本的串位内容（B" + "、B".join(map(str, sorted(stale))) +
+            "），已取消保存，原卷未做任何改动。请硬刷新页面（Ctrl+Shift+R）后重新打开"
+            "「编辑」，以最新标准答案为基准再修改。"
+        )
+    edits = [
+        {"blank_no": no, "raw": shown[no].strip()}
+        for no in sorted(by_no)
+        if shown[no].strip() != by_no[no]
+    ]
 
-    try:
-        # 元信息 / 目标空答案 / 模板 / 答案参考原文合成一个事务
-        store.update_paper_meta(conn, paper_id, title=title, language=language, commit=False)
+    # 安全性闸门：只允许「逐空值替换」+「末尾追加内容」。空位之间被插入新行时，
+    # 切分会把注释连同答案一起算进某个空，写回就会污染标准答案；固定代码被改动
+    # 同理。两类都明确拒绝并给出可操作指引，绝不静默保存成不一致数据。
+    for no, val in shown.items():
+        if any(ch in val and ch not in by_no[no] for ch in ("\n", "\r")):
+            raise ValueError(
+                "答案参考里在空位之间插入了新的行，无法安全对应到具体空位，已取消保存"
+                "（原卷未做任何改动）。只改某个空的答案请直接修改该空或用「改答案」入口；"
+                "如需调整试卷结构请用「重新上传文件重封卷」。"
+            )
+    merged = {**by_no, **{e["blank_no"]: e["raw"] for e in edits}}
+    rebuilt = core.fill(effective_template, merged)
+    if not answer_text.startswith(rebuilt):
+        raise ValueError(
+            "答案参考的固定代码与当前卷子模板不一致，已取消保存（原卷未做任何改动）。"
+            "如需修改试卷结构，请用「重新上传文件重封卷」。"
+        )
+    blanks_unchanged = False
+
+    reference = _reference_from_checks(run)
+    # 提交内容与历史串位副本逐字相同 → 一定是旧版编辑页 / 浏览器缓存提交的，
+    # 此时上面的逐空比对会把串位文本当成「用户改动」。宁可拒绝也不写回权威答案。
+    if answer_text == old_filled and old_filled != reference:
+        raise ValueError(
+            "提交的是历史展示副本（与当前逐空标准答案不一致），已取消保存，原卷未做任何改动。"
+            "请硬刷新页面（Ctrl+Shift+R）后重新打开「编辑」再保存。"
+        )
+    # 「打开编辑页 → 未作任何改动 → 直接保存」：编辑框载入的就是权威重建值，
+    # 完全不写库，连 code_filled 都不动，杜绝任何重新解析 / 新建 run 的机会。
+    no_change = (
+        (answer_text == reference or answer_text == old_filled)
+        and not edits
+        and new_template is None
+        and (title or "") == (paper.get("title") or "")
+        and (language or "") == (paper.get("language") or "")
+    )
+
+    if not no_change:
+        try:
+            # 元信息 / 目标空答案 / 模板 / 答案参考原文合成一个事务
+            store.update_paper_meta(conn, paper_id, title=title, language=language, commit=False)
+            changed = 0
+            if edits:
+                changed, _ = store.update_blank_answers(conn, paper_id, edits, commit=False)
+            if new_template is not None:
+                store.update_code_template(conn, paper_id, run_id, new_template)
+            # 用户提交的原文原样落库；不 core.fill 重建，也不因「没有空位差异」跳过。
+            # 例外：只改了试卷原文时，按新模板把固定代码同步进答案参考，
+            # 否则 code_filled 与 code_template 会不一致，刷新回显又会把改动抹掉。
+            stored_filled = answer_text
+            if new_template is not None and not split_on_new:
+                stored_filled = core.fill(new_template, merged) + answer_text[len(rebuilt):]
+            store.update_code_filled(conn, paper_id, run_id, stored_filled)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    else:
         changed = 0
-        if edits:
-            changed, _ = store.update_blank_answers(conn, paper_id, edits, commit=False)
-        if new_template is not None:
-            store.update_code_template(conn, paper_id, run_id, new_template)
-        # 关键：用户提交的原文原样落库；不再 core.fill 重建，也不因「没有空位差异」跳过。
-        store.update_code_filled(conn, paper_id, run_id, answer_text)
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
 
     return {
         "ok": True,
         "version": VERSION,
+        "edit_schema": EDIT_SCHEMA,   # 协议握手：前端据此确认跑的是新版后端
         "paper_id": paper_id,
-        "run_id": run_id,       # 仍是原 run，未新建
+        "run_id": run_id,             # 仍是原 run，未新建
         "title": title,
-        "blank_count": len(old_map),
+        "blank_count": len(by_no),
         "changed": changed,
         "changed_blanks": [e["blank_no"] for e in edits],
-        "text_saved": True,     # 答案参考原文已原样写入，前端据此给「已保存」回执
+        "text_saved": True,
         "template_saved": new_template is not None,
+        "no_change": no_change,
+        "blanks_unchanged": blanks_unchanged,
         "partial": True,
-        "paper": _attach_reference(store.get_paper(conn, paper_id)),  # 含最新 run 与权威回显
+        "paper": _attach_reference(
+            paper if no_change else store.get_paper(conn, paper_id)
+        ),
     }
 
 
@@ -1405,6 +1524,16 @@ def paper_update(paper_id: int):
 
         if request.is_json:
             payload = request.get_json(silent=True) or {}
+            # 协议握手：前端编辑保存必须带同版本标记。浏览器缓存的旧 JS 或
+            # 未重启的旧后端一旦错配，旧逻辑会整卷重解析新建 run、把展示副本里的
+            # 串位文本写成权威答案。宁可明确拒绝，也绝不静默污染原有数据。
+            if payload.get("edit_schema") != EDIT_SCHEMA:
+                return jsonify({
+                    "ok": False,
+                    "code": "EDIT_SCHEMA_MISMATCH",
+                    "error": "编辑协议版本不一致：请重启 WrongBook 服务并硬刷新页面（Ctrl+Shift+R）后重试。"
+                             "为避免破坏原有答案，本次保存已取消，卷子未做任何改动。",
+                }), 409
             # 试卷原文比对需要 strip（避免尾部空白被误判成「改了试卷结构」）；
             # 答案参考原文**不 strip**，用户提交什么就原样存什么，回显才能完全一致。
             paper_text = (payload.get("paper_text") or "").strip()

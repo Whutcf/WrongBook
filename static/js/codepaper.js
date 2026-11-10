@@ -37,6 +37,8 @@
     runId: null,          /* 当前质检 run，供人工复核按钮使用 */
     intakePaperId: null,  /* 最近一次封卷入库的卷子 */
     editingPaperId: null, /* 正在编辑（改原文重解析）的卷子；null 表示录入新卷 */
+    editSchemaOk: false,  /* 后端是否已重启到 EDIT_SCHEMA 版本；false 时禁止编辑保存 */
+    editInitial: null,    /* 编辑框刚载入时的原文快照，用于「未改动直接保存」短路 */
     editAnswersId: null,  /* 正在逐空改答案的卷子 */
     examPaper: null,      /* 取卷结果：模板 + 空位，不含答案 */
     examMode: "exam",     /* 当前答题模式：exam=考试（必须填满）/ practice=刷题（允许空答） */
@@ -747,6 +749,8 @@
     S.intakePaperId = d.paper_id || S.intakePaperId;
     S.runId = d.run_id || null;
     S.editingPaperId = null;
+    S.editSchemaOk = false;   /* 下次进编辑页重新探测后端版本 */
+    S.editInitial = null;
     /* 解析回执携带自动识别出的试卷类型：同步下拉框，保持界面与落库值一致 */
     if (d.paper_type) {
       var lopts = Array.prototype.slice.call($("cpLang").options);
@@ -756,8 +760,11 @@
       }
     }
     syncUploadBtn();
-    /* 上传落库后，文本框按钮文案复位回「解析并封卷入库」 */
-    if ($("cpBtnParse")) $("cpBtnParse").textContent = "解析并封卷入库";
+    /* 上传落库后，文本框按钮文案复位回「解析并封卷入库」；编辑态解除后解除禁用 */
+    if ($("cpBtnParse")) {
+      $("cpBtnParse").textContent = "解析并封卷入库";
+      $("cpBtnParse").disabled = false;
+    }
     /* 解析入库完成：已选文件不再需要，自动清空上传区，避免遗留文件名一直停在界面里 */
     clearUploadFiles();
     showIntakeReport(d);
@@ -787,40 +794,76 @@
     return runParseRequest(path, opts, btn, restoreText, useLLM);
   }
 
-  /* 编辑（改原文重解析）：把已封存卷子的原文载入录入框，保存时走 PUT 重新封卷 */
+  /* 编辑保存协议版本：必须与后端 codepaper/routes.py 的 EDIT_SCHEMA 一致。
+     后端是 use_reloader=False 的常驻进程，改完 Python 代码若没重启，浏览器刷新
+     加载到的却是最新 JS —— 前后端错配时旧后端会把编辑保存当整卷重解析新建 run，
+     把展示副本里的串位文本写成权威答案（#51 的 B2 就是这样被污染的）。
+     详情回显 edit_schema、PUT 也带它；任一侧过旧都拒绝写入，绝不静默污染。 */
+  var EDIT_SCHEMA = 3;
+
+  /* 前端自足重建权威答案参考：按 {{n}} ↔ checks.blank_no 把当前逐空标准答案
+     填回模板。即使后端还是旧版本（没有 answer_reference 字段），编辑框也与
+     「改答案」入口同源，不会再回显被固定文本串位覆盖的 code_filled。 */
+  function buildReference(run) {
+    var tpl = run && run.code_template ? run.code_template : "";
+    var checks = (run && run.checks) || [];
+    if (!tpl || !checks.length) return (run && run.code_filled) || "";
+    var byNo = {};
+    checks.forEach(function (c) {
+      byNo[String(c.blank_no)] = (c.filled_raw != null ? c.filled_raw : "");
+    });
+    return tpl.replace(/\{\{(\d+)\}\}/g, function (m, n) {
+      return Object.prototype.hasOwnProperty.call(byNo, n) ? byNo[n] : m;
+    });
+  }
+
+  /* 编辑：把已封存卷子的原文载入录入框，保存时只做局部订正（不重新解析整卷） */
   function openEditPaper(id) {
     setTip("正在载入这份卷子的原文…");
     api("/api/code-papers/papers/" + id).then(function (d) {
       var p = d.paper || {};
       var run = p.run || {};
+      /* 后端能力探测：旧进程没有 edit_schema，此时禁止保存，避免旧逻辑新建 run
+         把错误的展示副本写成权威答案。给用户明确、醒目的重启指引。 */
+      S.editSchemaOk = !!(d && d.edit_schema === EDIT_SCHEMA);
       $("cpTitle").value = p.title || "";
       var lang = p.language || "通用";
       var opts = Array.prototype.slice.call($("cpLang").options);
       $("cpLang").value = opts.some(function (o) { return o.value === lang; }) ? lang : "通用";
-      $("cpPaper").value = (run.code_template || "").replace(/\{\{\d+\}\}/g, "____");
-      /* 答案参考必须与「改答案」入口同源：后端按 blank_checks.filled_raw 用
-         {{n}} ↔ blank_no 映射重建的完整答案。历史 code_filled 是解析回填副本，
-         部分空被相邻固定文本串位覆盖（如 #51 的 B2 行9），直接读它会出现
-         「改答案是 data.head()、编辑却是一句说明文字」。老数据无该字段时回退。 */
-      $("cpAnswer").value = run.answer_reference || run.code_filled || "";
+      var paperText = (run.code_template || "").replace(/\{\{\d+\}\}/g, "____");
+      var answerText = run.answer_reference || buildReference(run);
+      $("cpPaper").value = paperText;
+      $("cpAnswer").value = answerText;
       S.editingPaperId = id;
       S.intakePaperId = id;
+      /* 快照按 submitEditParse 提交时的口径（paper/title 会 trim）保存，
+         否则尾部换行会让「未作任何改动」被误判成有改动，短路失效。 */
+      S.editInitial = {
+        paper: paperText.trim(), answer: answerText,
+        title: $("cpTitle").value.trim(), lang: $("cpLang").value,
+        runId: p.run_id || run.id || null
+      };
       syncUploadBtn();
       $("cpBtnParse").textContent = "保存到这份卷子（重新封卷）";
+      $("cpBtnParse").disabled = !S.editSchemaOk;
       $("cpIntakeReport").hidden = true;
       $("cpResultCard").hidden = true;
       switchTab("intake");
       $("cpPaper").focus();
-      setTip("已载入原文：改标题 / 类型 / 两份内容后点「保存到这份卷子」重新封卷。", "ok");
+      if (!S.editSchemaOk) {
+        toast("服务端尚未更新：请重启 WrongBook 服务后再编辑保存。当前已禁止保存，以免破坏原有答案。", "error");
+        setTip("服务端版本过旧，已禁止保存；请重启服务后重新点「编辑」。", "error");
+      } else {
+        setTip("已载入原文：改标题 / 类型 / 两份内容后点「保存到这份卷子」。", "ok");
+      }
     }).catch(function (e) { setTip("载入失败：" + e.message, "error"); });
   }
 
-  /* 「保存到这份卷子」：只把答案参考里实际改动的目标空写回当前 run。
+  /* 「保存到这份卷子」：局部订正，绝不走新增 / 整卷重解析通道。
 
-     不再复用 runParseRequest —— 它统一调 runParseSuccess，而后者是给「新增 /
-     整卷重解析」用的：会用 d.result || {} 把回执、质检卡和逐空明细渲染成空数据
-     （明明保存成功却像没生效），catch 还会把错误吞掉，让失败表现为「点击无反应」。
-     这里直接发请求：成功用回执里的 paper.run 立即刷新展示，失败给醒目反馈并保留现场。 */
+     不复用 runParseRequest / showResult：后者是给「新增卷 / 上传重封卷」用的，
+     会把回执渲染成质检卡并把页面带到「入库质检」观感，编辑保存只需要更新文本框
+     与缓存。回执还做协议校验，旧后端结果一律不认，避免把污染当成保存成功。 */
   function submitEditParse(btn) {
     var savedId = S.editingPaperId;
     if (!savedId) {
@@ -828,6 +871,28 @@
       setTip("未定位到要保存的卷子，请重新从「我的题库」点「编辑」。", "error");
       return;
     }
+    if (!S.editSchemaOk) {
+      toast("服务端尚未更新到最新版，保存已取消：请重启 WrongBook 服务并硬刷新页面后重试。", "error");
+      setTip("服务端版本过旧，保存已取消（卷子未做任何改动）。", "error");
+      return;
+    }
+    /* 答案参考不 trim：后端按「原样持久化」处理，前端 trim 会让回显与提交不一致 */
+    var paperText = $("cpPaper").value.trim();
+    var answerText = $("cpAnswer").value;
+    var title = $("cpTitle").value.trim() || "整卷入库";
+    var lang = $("cpLang").value;
+    var init = S.editInitial;
+
+    /* 未作任何改动直接点保存：完全不发请求，绝不产生任何写库或重解析。
+       过去这一步会触发整卷重解析 / 新建 run，把展示副本里的串位文本写成权威答案。 */
+    if (init && paperText === String(init.paper || "").trim() &&
+        answerText === init.answer &&
+        title === String(init.title || "").trim() && lang === init.lang) {
+      toast("内容未作任何改动，已跳过保存，卷子保持原样。", "success");
+      setTip("内容未改动，未执行保存。", "ok");
+      return;
+    }
+
     var restoreText = btn.textContent;
     btn.disabled = true;
     btn.classList.add("is-loading");
@@ -838,54 +903,63 @@
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        paper_text: $("cpPaper").value.trim(),
-        answer_text: $("cpAnswer").value.trim(),
-        title: $("cpTitle").value.trim() || "整卷入库",
-        language: $("cpLang").value,
+        edit_schema: EDIT_SCHEMA,
+        paper_text: paperText,
+        answer_text: answerText,
+        title: title,
+        language: lang,
         use_llm: !!($("cpUseLlm") && $("cpUseLlm").checked)
       })
     }).then(function (d) {
       btn.disabled = false;
       btn.classList.remove("is-loading");
       btn.textContent = restoreText;
-      /* 编辑态要一直保留到真正离开录入页。过去这里立刻把按钮复位成「解析并封卷入库」
-         并清空 S.editingPaperId，若主站桥接未就绪、页面没跳走，用户再点一次就会
-         退化成「新增一份卷子」，连续保存因此变成新建卷。 */
       if ($("cpBtnParse")) $("cpBtnParse").textContent = "保存到这份卷子（重新封卷）";
 
-      /* 保存成功：回执带更新后的完整 run，立即刷新当前卷子的答案展示，
-         不再等用户手动重新打开才发现生效（修复「仅展示未刷新」那一层）。 */
-      var paper = (d && d.paper) || {};
-      var run = paper.run || null;
+      /* 严格校验回执：只有新版后端的「局部订正」回执才算成功。旧后端 / 整卷
+         重解析会返回 result 而没有 text_saved / edit_schema，也可能换了新的
+         run_id —— 一律不当成功，更不渲染质检卡（避免「跳到入库质检」）。 */
+      if (!d || d.ok === false || d.text_saved !== true || d.partial !== true ||
+          d.edit_schema !== EDIT_SCHEMA ||
+          (init && init.runId && String(d.run_id) !== String(init.runId))) {
+        toast("保存未生效：服务端版本过旧或返回了非编辑回执。请重启服务并硬刷新页面后重试。", "error");
+        setTip("保存未生效：请重启服务并硬刷新页面后重试（未据此刷新任何展示）。", "error");
+        return;
+      }
+
+      /* 成功：只更新文本框与缓存，不调 showResult、不显示 cpResultCard。 */
+      var run = ((d.paper || {}).run) || null;
       if (run) {
-        S.runId = paper.run_id || run.id || S.runId;
-        S.intakePaperId = d.paper_id || savedId;
-        try { showResult(fromRun(run), []); } catch (e) { /* 质检卡刷新失败不影响落库回执 */ }
+        var ref = run.answer_reference || buildReference(run);
+        if ($("cpAnswer")) $("cpAnswer").value = ref;
         if ($("cpFilled")) $("cpFilled").textContent = run.code_filled || "";
-        $("cpResultCard").hidden = false;
-        /* 后端已把用户提交的答案参考原文原样落库：文本框同步成回执里的权威回显，
-           刷新 / 再次打开 / 连续保存都以同一份内容为准，不再回滚成串位旧值。 */
-        if ($("cpAnswer")) $("cpAnswer").value =
-          run.answer_reference || run.code_filled || $("cpAnswer").value;
+        S.editInitial = {
+          paper: $("cpPaper").value.trim(), answer: ref,
+          title: $("cpTitle").value.trim(), lang: $("cpLang").value, runId: d.run_id
+        };
+        S.runId = d.run_id || S.runId;
+        S.intakePaperId = d.paper_id || savedId;
       }
       loadPapers();
 
-      var changed = (d && d.changed_blanks) || [];
-      /* 只要原文已落库就是「保存成功」。过去拿 changed_blanks 是否为空判成败，
-         改注释 / 排版这类不含空位差异的改动会被说成「未检测到答案变化，卷子内容
-         保持不变」，用户自然认为保存没生效。 */
-      var msg = (d && d.text_saved)
-        ? ("已保存到这份卷子：答案参考已写入" +
+      var changed = d.changed_blanks || [];
+      var msg = d.no_change
+        ? "内容未改动，卷子保持原样。"
+        : ("已保存到这份卷子：答案参考已写入" +
            (changed.length ? "，B" + changed.join("、B") + " 的标准答案同步更新" : "（未改动空位答案）") +
            (d.template_saved ? "，试卷原文同步更新" : "") +
-           "；其它空、原有内容与题库原始数据均未改动。")
-        : "已按新原文重新封卷，卷库与后续开考都采用新答案。";
+           (d.blanks_unchanged ? "；检测到非逐空内容，标准答案保持不变" : "") +
+           "；其它空、原有内容与题库原始数据均未改动。");
       toast(msg, "success");
       setTip(msg, "ok");
 
       if (window.appUI && window.appUI.switchView) {
         S.editingPaperId = null;                     // 真正离开录入页才退出编辑态
-        if ($("cpBtnParse")) $("cpBtnParse").textContent = "解析并封卷入库";
+        S.editInitial = null;
+        if ($("cpBtnParse")) {
+          $("cpBtnParse").disabled = false;
+          $("cpBtnParse").textContent = "解析并封卷入库";
+        }
         window.appUI.switchView("library");          // 自动跳回「我的题库」
         revealPaperInLibrary(savedId);               // 定位并高亮刚编辑的这份试卷
       }
@@ -2232,7 +2306,10 @@
        会盲目把旧 id 当 paper_id 传给 /persist，导致「要更新的卷子不存在」，
        或在 id 仍指向别的卷时静默覆盖错卷。 */
     S.editingPaperId = null;
+    S.editSchemaOk = false;
+    S.editInitial = null;
     S.intakePaperId = null;
+    if ($("cpBtnParse")) $("cpBtnParse").disabled = false;
     syncUploadBtn();
     // 先按上传文件名查重，若已存在则提示「是否重新解析并更新」
     setTip("正在核对上传文件是否重复…", "info");
@@ -2604,7 +2681,10 @@
     $("cpTitle").value = "";
     clearUploadFiles();
     S.editingPaperId = null;
+    S.editSchemaOk = false;
+    S.editInitial = null;
     $("cpBtnParse").textContent = "解析并封卷入库";
+    $("cpBtnParse").disabled = false;
     $("cpIntakeReport").hidden = true;
     $("cpResultCard").hidden = true;
     setTip("已清空，可重新输入。");    $("cpPaper").focus();
