@@ -269,6 +269,61 @@ def run_selftest() -> dict:
     # 7) P1 图片视觉通道（合成图，不启动 PaddleOCR）
     _visual_checks(record)
 
+    # 7.5) 1.1.5 标题识别回归：异步解析路径必须按编号精确命中区段全名
+    def _title_regression_check():
+        from . import routes, ingest
+        from pathlib import Path as _Path
+
+        idx = {
+            "1.1.4": "1.1.4 电商平台用户行为分析系统的数据采集与处理流程设计",
+            "1.1.5": "1.1.5 智能交通系统的数据采集、处理和审核流程设计",
+        }
+        # 模拟整本答案被切成多区段：0 号区段是 1.1.4（故意模拟 match_section 选错区段）
+        sec_114 = NormDoc(doc_id="s114", kind="answer", source_type="text", pages=[[]],
+                          meta={"section_title_display": "1.1.4 电商平台用户行为分析系统的数据采集与处理流程设计"})
+        sec_115 = NormDoc(doc_id="s115", kind="answer", source_type="text", pages=[[]],
+                          meta={"section_title_display": "1.1.5 智能交通系统的数据采集、处理和审核流程设计"})
+        split_secs = [sec_114, sec_115]
+        # 模拟异步路径：paper_doc 未带 source_stem（notebook_title 为整卷全名，无法作为编号 key）
+        paper = from_text(
+            "# 1.1.5 智能交通系统的数据采集、处理和审核流程设计\nimport pandas as pd\n",
+            "paper", "text", "selftest-115",
+        )
+        paper.meta.pop("source_stem", None)
+        # 关键：match_section 恰好选中了错误的 1.1.4 区段，仅靠区段标题兜底会识别成 1.1.4
+        title = routes._derive_paper_title(split_secs, 0, paper, "1.1.5", idx, answer_doc=None)
+        record(
+            "1.1.5 标题识别：source_stem 缺失时靠 stem 兜底精确命中（防回归）",
+            title == "1.1.5 智能交通系统的数据采集、处理和审核流程设计",
+            f"title={title!r}",
+        )
+
+        # 集成测试：真实答案 PDF（若存在）走完整异步管线，验证 _parse_compute 已注入 source_stem
+        ans_pdf = _Path("data/uploads/codepaper/753ea1bc777f40b3ba8ce57c2f11978a.pdf")
+        if ans_pdf.exists():
+            try:
+                adoc, _ = ingest.load_file(str(ans_pdf), "answer")
+                pdoc = from_text(
+                    "import pandas as pd\ndata = ____\nprint(data.head())\n",
+                    "paper", "text", "selftest-115-p",
+                )
+                pdoc.meta.pop("source_stem", None)  # 模拟异步路径未预置 source_stem
+                resp = routes._parse_compute(
+                    pdoc, adoc, "1.1.5.ipynb", "ans.pdf", "ans.pdf", "1.1.5",
+                    "", {}, [],
+                )
+                record(
+                    "1.1.5 标题识别：真实答案 PDF 异步管线精确命中区段全名",
+                    resp.get("title") == "1.1.5 智能交通系统的数据采集、处理和审核流程设计",
+                    f"title={resp.get('title')!r}",
+                )
+            except Exception as exc:  # noqa: BLE001
+                record("1.1.5 标题识别：真实答案 PDF 异步管线（异常）", False, f"{type(exc).__name__}: {exc}")
+        else:
+            record("1.1.5 标题识别：真实答案 PDF 异步管线（跳过，无样本文件）", True, "skipped")
+
+    _title_regression_check()
+
     # 8) v1.4.0 考场判分：与「入库质检」互不替代
     exam_blanks = [
         {
