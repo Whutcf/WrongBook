@@ -906,7 +906,7 @@ def parse_job_status(job_id: str):
     if status == "cancelled":
         return jsonify({"ok": False, "status": "cancelled", "error": "已取消。"})
     return jsonify({"ok": True, "status": "running",
-                    "progress": job.get("progress", "正在解析…（大模型处理中，请稍候）")})
+                    "progress": job.get("progress", "正在解析试卷与答案，请稍候…")})
 
 
 @codepaper_bp.route("/api/code-papers/parse-job/<job_id>", methods=["DELETE"])

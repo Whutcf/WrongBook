@@ -60,7 +60,11 @@
     parseAborted: false,  /* 异步解析是否被用户取消：轮询循环据此停止，不影响后台任务本身 */
     probeResult: null,    /* 探针 / 异步解析返回的完整回执（含 result、paper_type、cache_token） */
     probeToken: null,     /* /persist 凭此 token 直接落库，免去二次重解 */
-    probeMatched: null    /* 自动匹配的区段下标，用于「接受自动匹配」时走快速提交通道 */
+    probeMatched: null,   /* 自动匹配的区段下标，用于「接受自动匹配」时走快速提交通道 */
+    llmEnabled: false,    /* 解析方式唯一真值：粘贴 / 上传 / 编辑保存共用，两处开关只是它的视图 */
+    llmChannel: {         /* ok: null=读取中 / true=通道可用 / false=未启用或读取失败 */
+      ok: null, label: "", text: "正在读取「整卷解析大模型」配置…"
+    }
   };
   var CURRENT_RUN_ID = null;
 
@@ -232,23 +236,87 @@
     if (ev.key === "Escape") closeSlice();
   });
 
-  /* 录入页打开时拉一次「整卷解析大模型」配置：让用户知道辅助解析是否可用。
-     注意：读取的是独立于图片识别（OCR）的 parse 通道，两者配置互不相通。 */
+  /* ------------------------------------------------------------------
+     解析方式：一个真值、两个视图、三层信息
+     · 通道状态 = 设置里「② 整卷解析大模型」是否可用（只读事实）
+     · 开关     = 本次录入是否允许模型介入（粘贴 / 上传 / 编辑保存共用）
+     · 状态徽标 = 现在点解析会发生什么
+     旧版把通道可用性写成「整卷解析大模型已启用」，开关明明是关的却读成已启用；
+     打开开关后还会冒出第二个「用模型辅助解析」按钮，像是要点两次才生效。
+     更糟的是主解析按钮恒传 use_llm:false，开关对粘贴录入其实完全不起作用。
+     ------------------------------------------------------------------ */
+  function llmOn() { return !!S.llmEnabled && S.llmChannel.ok !== false; }
+
+  function modeText(full) {
+    if (!llmOn()) return "当前：纯规则 · 完全离线";
+    return full && S.llmChannel.label
+      ? "当前：模型辅助 · " + S.llmChannel.label
+      : "当前：模型辅助";
+  }
+
+  /* 上传解析的等待文案不再无条件写「大模型处理中」：离线时明说离线。 */
+  function parseWaitTip(base) {
+    return base + (llmOn()
+      ? "（模型辅助已开启，可能需要等待模型返回）"
+      : "（纯规则离线解析）") + "，请稍候，勿关闭页面…";
+  }
+
+  /* 两个复选框只是同一份状态的两个视图：任何一处改动都同步回另一处，
+     所有提交逻辑仍只读 #cpUseLlm，杜绝多真值漂移。 */
+  function renderLlmMode() {
+    var on = llmOn();
+    var bar = $("cpModeBar");
+    if (bar) bar.classList.toggle("is-llm", on);
+    $$("[data-cp-llm-toggle]").forEach(function (box) {
+      box.checked = !!S.llmEnabled;
+      box.disabled = S.llmChannel.ok === false;
+      var wrap = box.closest ? box.closest(".cp-switch") : null;
+      if (wrap) wrap.classList.toggle("is-disabled", box.disabled);
+    });
+    var state = $("cpLlmStateText");
+    if (state) state.textContent = modeText(true);
+    var ctl = $("cpControlMode");
+    if (ctl) { ctl.textContent = modeText(false); ctl.classList.toggle("is-llm", on); }
+    var up = $("cpUploadLlmState");
+    if (up) { up.textContent = modeText(false); up.classList.toggle("is-llm", on); }
+    var ch = $("cpLlmChannel");
+    if (ch) {
+      ch.textContent = S.llmChannel.text;
+      ch.classList.toggle("is-warn", S.llmChannel.ok === false);
+    }
+  }
+
+  function setLlmEnabled(on) {
+    if (S.llmChannel.ok === false) { renderLlmMode(); return; }
+    S.llmEnabled = !!on;
+    renderLlmMode();
+  }
+
+  /* 录入页打开时刷新一次 parse 通道配置（与图片识别 OCR 通道互不相通）。
+     刷新期间沿用上一次已知状态，避免开关与徽标来回闪一下。 */
   function loadLlmStatus() {
-    var hint = $("cpLlmHint");
-    if (!hint) return;
-    hint.textContent = "读取整卷解析大模型配置中…";
+    var previous = S.llmChannel || {};
+    S.llmChannel = {
+      ok: previous.ok === true ? true : null,
+      label: previous.label || "",
+      text: "正在读取「整卷解析大模型」配置…"
+    };
+    renderLlmMode();
     api("/api/llm/config?scope=parse").then(function (d) {
-      if (d && d.enabled && d.active_label && d.active_label !== "--") {
-        hint.textContent = "整卷解析大模型已启用：" + d.active_label + " · 仅在规则未找齐答案时补齐缺失空，找齐则零调用（不勾选则完全离线）";
-        hint.className = "cp-llm-hint is-on";
-      } else {
-        hint.textContent = "未单独配置「整卷解析大模型」；可在「设置 → 大模型 → ② 整卷解析大模型」中启用，不影响常规解析";
-        hint.className = "cp-llm-hint";
-      }
+      var ok = !!(d && d.enabled && d.active_label && d.active_label !== "--");
+      S.llmChannel = ok
+        ? { ok: true, label: d.active_label,
+            text: "通道已配置：" + d.active_label +
+                  "（设置 → 大模型 → ② 整卷解析大模型）。这是「能不能用」；下方开关决定「这次用不用」。" }
+        : { ok: false, label: "",
+            text: "「整卷解析大模型」通道尚未启用：开关暂不可用，本次一律纯规则离线解析。请到「设置 → 大模型 → ② 整卷解析大模型」添加模型并启用。" };
+      if (!ok) S.llmEnabled = false;
+      renderLlmMode();
     }).catch(function () {
-      hint.textContent = "无法读取模型配置（离线？）；不影响常规解析";
-      hint.className = "cp-llm-hint";
+      S.llmChannel = { ok: false, label: "",
+        text: "无法读取模型配置（服务离线？）：本次先按纯规则离线解析，不影响入库。" };
+      S.llmEnabled = false;
+      renderLlmMode();
     });
   }
 
@@ -313,7 +381,7 @@
     if (llmBox) {
       if (notes.length) {
         llmBox.hidden = false;
-        llmBox.textContent = "大模型：" + notes.join("；");
+        llmBox.textContent = "模型辅助：" + notes.join("；");
       } else {
         llmBox.hidden = true;
         llmBox.textContent = "";
@@ -681,9 +749,9 @@
     if ($("cpTip")) $("cpTip").classList.remove("is-loading");
     if (S.parseAC) { try { S.parseAC.abort(); } catch (e) {} S.parseAC = null; }
     if (why === "auto") {
-      setTip("大模型调用超时，系统已自动终止（已等待约 " + (WATCHDOG_MS / 1000) + " 秒）。若卷子已在后台入库，可在「我的题库」查看；否则请关闭「用大模型辅助解析」后重试。", "error");
+      setTip("大模型调用超时，系统已自动终止（已等待约 " + (WATCHDOG_MS / 1000) + " 秒）。若卷子已在后台入库，可在「我的题库」查看；否则请关闭「启用大模型辅助」开关后重试。", "error");
     } else {
-      setTip("已手动终止大模型调用。若卷子已在后台入库，可在「我的题库」查看；否则请重试或关闭「用大模型辅助解析」。", "error");
+      setTip("已手动终止大模型调用。若卷子已在后台入库，可在「我的题库」查看；否则请重试或关闭「启用大模型辅助」开关。", "error");
     }
   }
 
@@ -2266,10 +2334,14 @@
   function goIntake() { switchTab("intake"); $("cpTitle").focus(); }
   $("cpBtnGoIntake").addEventListener("click", goIntake);
 
-  function doParse(btn, useLLM) {
+  /* 主按钮直接读开关：不再有「先开开关、再点另一个按钮」的二次确认式假象。
+     旧实现把 useLLM 恒写成 false，导致开关对粘贴录入根本不起作用，
+     只有那个打开开关后才冒出来的隐藏按钮才真的带 use_llm:1。 */
+  function doParse(btn) {
     var paper = $("cpPaper").value.trim(), answer = $("cpAnswer").value.trim();
     if (!paper || !answer) { setTip("请先填写两侧内容。", "error"); return; }
     if (S.editingPaperId) { submitEditParse(btn); return; }
+    var useLLM = !!($("cpUseLlm") && $("cpUseLlm").checked);
     submitParse("/api/code-papers/parse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2278,23 +2350,17 @@
         answer_text: answer,
         title: $("cpTitle").value.trim() || ("整卷练习 " + new Date().toLocaleDateString("zh-CN")),
         language: $("cpLang").value,
-        use_llm: !!useLLM,
+        use_llm: useLLM,
         persist: true
       })
     }, btn, undefined, useLLM);
   }
-  $("cpBtnParse").addEventListener("click", function () { doParse($("cpBtnParse"), false); });
-  /* 用模型辅助解析（可选）：仅在「启用大模型」开关打开时可见；走 LLM 二次核对 */
-  $("cpBtnLlmAssist").addEventListener("click", function () { doParse($("cpBtnLlmAssist"), true); });
-  /* 启用大模型开关控制「用模型辅助解析（可选）」按钮的显隐：关则不显示 */
-  function syncLlmAssistBtn() {
-    var b = $("cpBtnLlmAssist");
-    if (b) b.hidden = !($("cpUseLlm") && $("cpUseLlm").checked);
-  }
-  if ($("cpUseLlm")) {
-    $("cpUseLlm").addEventListener("change", syncLlmAssistBtn);
-    syncLlmAssistBtn();
-  }
+  $("cpBtnParse").addEventListener("click", function () { doParse($("cpBtnParse")); });
+  /* 两处开关写同一份真值；切换只更新状态展示，绝不新增按钮或额外提示。 */
+  $$("[data-cp-llm-toggle]").forEach(function (box) {
+    box.addEventListener("change", function () { setLlmEnabled(box.checked); });
+  });
+  renderLlmMode();
   /* 用户手动改过试卷类型下拉框，视为显式选择，覆盖上传自动识别的标记 */
   if ($("cpLang")) $("cpLang").addEventListener("change", function () { S.langAuto = false; });
 
@@ -2369,7 +2435,7 @@
       .then(function (d) {
         if (S.parseAborted) return;
         if (d.status === "running") {
-          setTip(d.progress || "正在解析试卷与答案（大模型处理中，请稍候，勿关闭页面）…", "info");
+          setTip(d.progress || "正在解析试卷与答案，请稍候，勿关闭页面…", "info");
           if ($("cpTip")) $("cpTip").classList.add("is-loading");
           setTimeout(function () { pollParseJob(jobId, onDone, onError); }, 2000);
           return;
@@ -2396,7 +2462,7 @@
     probe.append("dry_run", "1");
     probe.append("cache", "1");
     if ($("cpUseLlm") && $("cpUseLlm").checked) probe.append("use_llm", "1");
-    setTip("正在依据试卷在答案 PDF 中定位对应区段（大模型处理中，请稍候，勿关闭页面）…", "info");
+    setTip(parseWaitTip("正在依据试卷在答案 PDF 中定位对应区段"), "info");
     if ($("cpTip")) $("cpTip").classList.add("is-loading");
     showAbort(true);
     startParseJob(
@@ -2630,7 +2696,7 @@
       form.append("answer_section", String(chosenIndex));
     }
     if ($("cpUseLlm") && $("cpUseLlm").checked) form.append("use_llm", "1");
-    setTip("正在按所选区段重新解析（大模型处理中，请稍候）…", "info");
+    setTip(parseWaitTip("正在按所选区段重新解析"), "info");
     if ($("cpTip")) $("cpTip").classList.add("is-loading");
     showAbort(true);
     startParseJob(
@@ -2932,8 +2998,11 @@
     }).observe(pageEl, { attributes: true, attributeFilter: ["hidden"] });
   }
 
-  /* 首次进入：拉卷库；页面本来就是 shelf 页签，不重复切换 */
+  /* 首次进入：拉卷库；页面本来就是 shelf 页签，不重复切换。
+     解析方式状态也在此时初始化一次 —— 旧版只在「切到录入页签」时才读配置，
+     直接打开录入页会一直停在「读取模型配置中…」。 */
   loadPapers();
+  loadLlmStatus();
 
   /* ------------------------------------------------------------------
      外部入口：随机抽一份整卷开考（供「开始练习 → 随机练习试卷」模式卡调用）。

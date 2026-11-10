@@ -262,19 +262,118 @@
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   margin-top: 16px;
 }
-/* 操作行：启用大模型开关 + 解析入库 / 清空 / 可选模型按钮 同行排列 */
+/* 操作行：只放动作，右侧贴一枚「当前解析方式」回显，不再塞开关与长提示 */
 .cp-embed .cp-control-row {
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
   margin-top: 14px;
 }
-.cp-embed .cp-control-row .cp-switch { flex: none; }
-.cp-embed .cp-control-row .cp-llm-hint { margin-left: 4px; }
-.cp-embed .cp-btn-llm-assist {
-  border-style: dashed;
-  color: var(--cp-accent-2);
-  border-color: var(--cp-accent);
+.cp-embed .cp-control-mode {
+  margin-left: auto; padding: 4px 0 4px 10px;
+  font-size: 11px; color: var(--muted); white-space: nowrap;
 }
-.cp-embed .cp-btn-llm-assist:hover { background: var(--cp-accent-soft); }
+.cp-embed .cp-control-mode.is-llm { color: var(--cp-ok); font-weight: 600; }
+
+/* ---------- 04b 解析方式共享条 ------------------------------------
+   设计意图：把「设置里的通道是否可用」和「本次录入是否启用」拆成不同层级，
+   状态徽标只回答「现在点解析会发生什么」，不再出现「已启用」这种既像说
+   通道、又像说开关的歧义词。上传卡片内的开关是同一状态的第二个视图。 */
+.cp-embed .cp-mode-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "lead ctrl" "foot foot";
+  column-gap: 24px; row-gap: 12px;
+  margin-top: 16px; padding: 14px 16px 11px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--cp-accent);
+  border-radius: 0 12px 12px 0;
+  background: linear-gradient(105deg, var(--cp-accent-soft), transparent 62%), var(--surface);
+  transition: border-color var(--cp-fast) var(--cp-ease);
+}
+.cp-embed .cp-mode-bar.is-llm { border-left-color: var(--cp-ok); }
+.cp-embed .cp-mode-lead { grid-area: lead; min-width: 0; }
+.cp-embed .cp-mode-eyebrow {
+  display: block; font: 600 9.5px/1 var(--cp-mono);
+  letter-spacing: .1em; text-transform: uppercase; color: var(--cp-accent-2);
+}
+.cp-embed .cp-mode-eyebrow i { font-style: normal; opacity: .45; margin: 0 5px; }
+.cp-embed .cp-mode-lead h4 {
+  margin: 7px 0 0; font: 700 15px/1.3 var(--cp-serif);
+  letter-spacing: -.01em; color: var(--ink);
+}
+.cp-embed .cp-mode-lead p {
+  margin: 5px 0 0; max-width: 70ch;
+  font-size: 11.5px; line-height: 1.7; color: var(--muted);
+}
+.cp-embed .cp-mode-lead p strong { color: var(--ink-2); font-weight: 700; }
+.cp-embed .cp-mode-control {
+  grid-area: ctrl; align-self: center;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+}
+.cp-embed .cp-switch--mode { min-height: 44px; padding: 0 4px; }
+.cp-embed .cp-switch--mode .cp-switch-text { font-size: 13px; }
+.cp-embed .cp-mode-state {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--surface-2);
+  font: 600 11px/1.4 var(--font); color: var(--ink-2); white-space: nowrap;
+  transition: color var(--cp-fast) var(--cp-ease),
+              border-color var(--cp-fast) var(--cp-ease),
+              background-color var(--cp-fast) var(--cp-ease);
+}
+.cp-embed .cp-mode-state-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--muted-2);
+  transition: background-color var(--cp-fast) var(--cp-ease),
+              transform var(--cp-fast) var(--cp-ease);
+}
+.cp-embed .cp-mode-bar.is-llm .cp-mode-state {
+  color: var(--cp-ok); border-color: var(--cp-ok-line); background: var(--cp-ok-soft);
+}
+.cp-embed .cp-mode-bar.is-llm .cp-mode-state-dot {
+  background: var(--cp-ok); transform: scale(1.25);
+}
+.cp-embed .cp-mode-foot {
+  grid-area: foot; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px;
+  padding-top: 9px; border-top: 1px dashed var(--line-soft);
+  font-size: 10.5px; color: var(--muted);
+}
+.cp-embed .cp-mode-channel { flex: 1 1 320px; min-width: 0; line-height: 1.6; }
+.cp-embed .cp-mode-channel.is-warn { color: var(--cp-amber-2); font-weight: 600; }
+.cp-embed .cp-mode-settings { font: 600 10.5px/1 var(--font); padding: 7px 10px; }
+/* 上传卡片里的镜像开关：收敛成一个轻量控制面板，避免抢主按钮的视觉权重 */
+.cp-embed .cp-upload-mode {
+  margin-left: auto; flex: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 11px;
+  background: var(--surface-2);
+}
+.cp-embed .cp-upload-mode-label {
+  font: 600 9px/1 var(--cp-mono); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted-2);
+}
+.cp-embed .cp-switch--compact { min-height: 44px; gap: 8px; }
+.cp-embed .cp-switch--compact .cp-switch-text { font-size: 12px; }
+.cp-embed .cp-upload-mode-state { font: 600 10.5px/1.3 var(--font); color: var(--ink-2); }
+.cp-embed .cp-upload-mode-state.is-llm { color: var(--cp-ok); }
+.cp-embed .cp-upload-mode-sync { font-size: 9.5px; color: var(--muted-2); }
+/* 通道不可用：明确置灰并说明原因，不留一个能点却没效果的开关 */
+.cp-embed .cp-switch.is-disabled { cursor: not-allowed; opacity: .5; }
+.cp-embed .cp-switch.is-disabled .cp-switch-text { color: var(--muted); }
+@media (max-width: 900px) {
+  .cp-embed .cp-mode-bar {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "lead" "ctrl" "foot";
+  }
+  .cp-embed .cp-mode-control { align-items: flex-start; }
+  .cp-embed .cp-control-mode { margin-left: 0; flex-basis: 100%; padding-left: 0; }
+  .cp-embed .cp-upload-head { flex-wrap: wrap; }
+  .cp-embed .cp-upload-mode { margin-left: 0; width: 100%; align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cp-embed .cp-mode-bar,
+  .cp-embed .cp-mode-state,
+  .cp-embed .cp-mode-state-dot { transition: none; }
+}
 .cp-embed .cp-btn.is-loading::before {
   content: ""; width: 12px; height: 12px; flex: none;
   border: 2px solid rgba(255, 251, 242, .38);
@@ -1173,8 +1272,6 @@
 .cp-embed .cp-switch input:checked + .cp-switch-track .cp-switch-thumb { transform: translateX(18px); background: var(--cp-accent); }
 .cp-embed .cp-switch input:focus-visible + .cp-switch-track { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
 .cp-embed .cp-switch-text { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
-.cp-embed .cp-llm-hint { font-size: 11px; color: var(--muted); }
-.cp-embed .cp-llm-hint.is-on { color: var(--cp-ok); font-weight: 600; }
 .cp-embed .cp-llm-note--card {
   margin: 10px 0 0; padding: 8px 12px; clear: both;
   background: var(--cp-accent-soft); border-left: 3px solid var(--cp-accent);
