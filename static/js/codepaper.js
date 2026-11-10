@@ -1656,6 +1656,10 @@
   $("cpBtnAuditAnswerBlock").addEventListener("click", function () {
     openAnswerBlock(S.auditPaperId, S.runId, "参考答案原文", "cpAuditSelect");
   });
+  /* 与「逐空明细」同行的参考答案原文入口（原顶部按钮保留，二者同源） */
+  $("cpBtnAuditAnswerBlockInline").addEventListener("click", function () {
+    openAnswerBlock(S.auditPaperId, S.runId, "参考答案原文", "cpAuditSelect");
+  });
   $("cpBtnEditAnswerBlock").addEventListener("click", function () {
     openAnswerBlock(S.editAnswersId, S.editAnswersRunId, "参考答案原文");
   });
