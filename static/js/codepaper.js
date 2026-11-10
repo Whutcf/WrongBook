@@ -113,12 +113,49 @@
   function ui() { return window.appUI || null; }
   /* 醒目提示：优先复用主站 toast（带图标/动画/顶部堆叠/自动消失，与全站一致，
      绝不会被忽略）；桥接未就绪时退回 setTip。用于「保存」等需要强反馈的操作。 */
+  /* 小工具：转义，避免提示文本里的 < > & 破坏 DOM */
+  function escapeHtmlSafe(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  /* 备用的本地 toast：仅依赖全局 .toast 样式与 #toastStack，不依赖 app.js 桥接，
+     保证即使 window.appUI 不可用、或桥接抛错，也必有可见反馈（杜绝「点击无反应」）。 */
+  function localToast(msg, type) {
+    var stack = document.getElementById("toastStack");
+    if (!stack) {
+      stack = document.createElement("div");
+      stack.id = "toastStack";
+      stack.className = "toast-stack";
+      stack.setAttribute("aria-live", "polite");
+      document.body.appendChild(stack);
+    }
+    var item = document.createElement("div");
+    item.className = "toast " + (type === "success" ? "ok" : type === "error" ? "error" : "");
+    item.setAttribute("role", type === "error" ? "alert" : "status");
+    item.innerHTML = "<span>" + escapeHtmlSafe(msg) + "</span>";
+    stack.appendChild(item);
+    var hold = type === "error" ? 7000 : type === "success" ? 4200 : 5200;
+    var timer;
+    var dismiss = function () {
+      clearTimeout(timer);
+      item.style.opacity = "0";
+      item.style.transform = "translateY(-10px)";
+      item.style.transition = ".24s";
+      setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, 260);
+    };
+    timer = setTimeout(dismiss, hold);
+    item.addEventListener("mouseenter", function () { clearTimeout(timer); });
+    item.addEventListener("mouseleave", function () { timer = setTimeout(dismiss, 1600); });
+  }
+  /* 醒目提示：优先复用主站 showToast（带图标/动画/顶部堆叠/自动消失，与全站一致）；
+     桥接未就绪或抛错时退回本地 localToast，保证点击永远有可见反馈。 */
   function toast(msg, type) {
     var app = ui();
     if (app && typeof app.showToast === "function") {
-      try { app.showToast(msg, type || "info"); return; } catch (e) { /* 退回 setTip */ }
+      try { app.showToast(msg, type || "info"); return; } catch (e) { /* 退回本地实现 */ }
     }
-    setTip(msg, type === "success" ? "ok" : type === "error" ? "error" : "");
+    localToast(msg, type);
   }
   /* 复用主站「请确认」弹窗（返回 Promise<boolean>）；桥接未就绪时退回原生 confirm。 */
   function uiConfirm(title, message, confirmText, danger) {
@@ -1490,38 +1527,44 @@
 
   /* 入库质检页内联订正：直接改最新 run 的标准答案并重算质检判定 */
   function saveAuditEdits() {
-    var id = S.auditPaperId;
-    if (!id) { toast("请先在上方选择一份卷子。", "error"); return; }
-    var inputs = $$("#cpRows .cp-ans-input");
-    if (!inputs.length) { toast("本卷没有可保存的空位答案。", "error"); return; }
-    var dirty = inputs.filter(function (i) {
-      return i.parentNode && i.parentNode.classList &&
-        i.parentNode.classList.contains("is-dirty");
-    }).length;
-    if (!dirty) {
-      toast("还没有改动任何答案：请先在「标准答案」列修改，再点「保存修改」。", "info");
-      return;
-    }
-    var edits = inputs.map(function (i) {
-      return { no: Number(i.dataset.no), raw: i.value };
-    });
     var btn = $("cpBtnSaveAudit");
-    btn.disabled = true;
-    btn.textContent = "保存中…";
-    api("/api/code-papers/papers/" + id + "/blanks", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ edits: edits })
-    }).then(function (d) {
-      btn.disabled = false;
-      btn.textContent = "保存修改";
-      toast("保存成功，已写入 " + (d.changed || 0) + " 个空的答案，正在重新判定质检结果…", "success");
-      loadAudit(id);
-    }).catch(function (e) {
-      btn.disabled = false;
-      btn.textContent = "保存修改";
+    try {
+      var id = S.auditPaperId;
+      if (!id) { toast("请先在上方选择一份卷子。", "error"); return; }
+      var inputs = $$("#cpRows .cp-ans-input");
+      if (!inputs.length) { toast("本卷没有可保存的空位答案。", "error"); return; }
+      var dirty = inputs.filter(function (i) {
+        return i.parentNode && i.parentNode.classList &&
+          i.parentNode.classList.contains("is-dirty");
+      }).length;
+      if (!dirty) {
+        toast("还没有改动任何答案：请先在「标准答案」列修改，再点「保存修改」。", "info");
+        return;
+      }
+      var edits = inputs.map(function (i) {
+        return { no: Number(i.dataset.no), raw: i.value };
+      });
+      btn.disabled = true;
+      btn.textContent = "保存中…";
+      api("/api/code-papers/papers/" + id + "/blanks", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ edits: edits })
+      }).then(function (d) {
+        btn.disabled = false;
+        btn.textContent = "保存修改";
+        toast("保存成功，已写入 " + (d.changed || 0) + " 个空的答案，正在重新判定质检结果…", "success");
+        loadAudit(id);
+      }).catch(function (e) {
+        btn.disabled = false;
+        btn.textContent = "保存修改";
+        toast("保存失败：" + (e && e.message ? e.message : e), "error");
+      });
+    } catch (e) {
+      /* 同步异常兜底：按钮复位 + 必现的失败提示，杜绝「点了没反应」 */
+      if (btn) { btn.disabled = false; btn.textContent = "保存修改"; }
       toast("保存失败：" + (e && e.message ? e.message : e), "error");
-    });
+    }
   }
 
   /* ------------------------------------------------------------------
@@ -1719,6 +1762,7 @@
   }
   function commitAnsEdit() {
     if (!S.ansEdit) return;
+    var no = S.ansEdit.no;
     var val = ansEditText.value;
     S.ansEdit.input.value = val;
     if (S.ansEdit.preview) {
@@ -1730,6 +1774,7 @@
       S.ansEdit.preview.parentNode.classList.add("is-dirty");
     }
     closeAnsEditModal();
+    toast("已暂存 B" + no + " 的答案（本地）：点「保存修改」才会正式写进卷库。", "success");
   }
   ansEditText.addEventListener("input", function () { autoSizeAnsText(); syncAnsCharCount(); });
   $("cpAnsEditSave").addEventListener("click", commitAnsEdit);
@@ -1775,9 +1820,11 @@
   }
   function commitEditAns() {
     if (!S.editAns) return;
+    var no = S.editAns.no;
     S.editAns.ta.value = editAnsText.value;
     resizeAnswer(S.editAns.ta);
     closeEditAnsModal();
+    toast("已暂存 B" + no + " 的答案（本地）：点「保存答案」才会正式写进卷库。", "success");
   }
   editAnsText.addEventListener("input", function () { autoSizeEditAns(); syncEditAnsCount(); });
   $("cpEditAnsSave").addEventListener("click", commitEditAns);
