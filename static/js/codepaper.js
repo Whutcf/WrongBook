@@ -737,9 +737,8 @@
 
   /* 解析 / 入库成功后的统一回执：落库成功与「凭 token 直接落库」共用，保证回执一致 */
   function runParseSuccess(d, btn) {
-    /* 编辑重封卷（S.editingPaperId 非空）保存成功后，需通知主站刷新该卷的关联历史数据；
-       本函数稍后会把它清空，所以先留一份。新增卷为 null，不触发。 */
-    var editedPaperId = S.editingPaperId;
+    /* 「保存到这份卷子」已改走 submitEditParse 自己的局部回执与刷新；
+       本函数只服务于新增卷 / 重新上传文件落库。 */
     if (btn) {
       btn.disabled = false;
       btn.classList.remove("is-loading");
@@ -757,7 +756,7 @@
       }
     }
     syncUploadBtn();
-    /* 上传/编辑重封卷后，文本框按钮文案也要从「保存到这份卷子」复位回「解析并封卷入库」 */
+    /* 上传落库后，文本框按钮文案复位回「解析并封卷入库」 */
     if ($("cpBtnParse")) $("cpBtnParse").textContent = "解析并封卷入库";
     /* 解析入库完成：已选文件不再需要，自动清空上传区，避免遗留文件名一直停在界面里 */
     clearUploadFiles();
@@ -765,12 +764,6 @@
     showResult(fromParse(d.result || {}), d.llm_notes || []);
     loadPapers();
     setTip("已封卷入库，去「我的题库」即可开考。", "ok");
-    /* 编辑重封卷保存成功后，主站侧同步刷新与该卷关联的历史 / 统计视图：
-       后端已按最新答案重判历史考试记录，这里作废旧缓存并重新拉取，
-       避免「整卷历史 / 学习统计 / 题库卡片」继续展示旧分数与旧答案。 */
-    if (editedPaperId && window.appUI && typeof window.appUI.refreshPaperViews === "function") {
-      try { window.appUI.refreshPaperViews(editedPaperId); } catch (e) { /* 不影响保存回执 */ }
-    }
     // 解析完成自动滚到下方「确认 / 考试」回执，免得还要手动滑到底（尊重减弱动效偏好）
     var rep = $("cpIntakeReport");
     if (rep) {
@@ -818,13 +811,26 @@
     }).catch(function (e) { setTip("载入失败：" + e.message, "error"); });
   }
 
+  /* 「保存到这份卷子」：只把答案参考里实际改动的目标空写回当前 run。
+
+     不再复用 runParseRequest —— 它统一调 runParseSuccess，而后者是给「新增 /
+     整卷重解析」用的：会用 d.result || {} 把回执、质检卡和逐空明细渲染成空数据
+     （明明保存成功却像没生效），catch 还会把错误吞掉，让失败表现为「点击无反应」。
+     这里直接发请求：成功用回执里的 paper.run 立即刷新展示，失败给醒目反馈并保留现场。 */
   function submitEditParse(btn) {
-    var savedId = S.editingPaperId;   // 先存下：runParseRequest 成功回调里会把它清空
+    var savedId = S.editingPaperId;
+    if (!savedId) {
+      toast("未定位到要保存的卷子，请从「我的题库」重新点「编辑」进入。", "error");
+      setTip("未定位到要保存的卷子，请重新从「我的题库」点「编辑」。", "error");
+      return;
+    }
+    var restoreText = btn.textContent;
     btn.disabled = true;
     btn.classList.add("is-loading");
-    btn.textContent = "重新封卷中…";
-    setTip("正在按新原文重新解析并封卷…");
-    runParseRequest("/api/code-papers/papers/" + savedId, {
+    btn.textContent = "保存中…";
+    setTip("正在把改动的答案参考写入这份卷子…", "info");
+
+    return api("/api/code-papers/papers/" + savedId, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -834,16 +840,54 @@
         language: $("cpLang").value,
         use_llm: !!($("cpUseLlm") && $("cpUseLlm").checked)
       })
-    }, btn, "解析并封卷入库", !!($("cpUseLlm") && $("cpUseLlm").checked)).then(function (d) {
-      /* 仅当真正保存成功（返回了 paper_id）才跳转；失败保留「入库失败」提示且不跳转 */
-      if (!d || !d.paper_id) return;
+    }).then(function (d) {
+      btn.disabled = false;
+      btn.classList.remove("is-loading");
+      btn.textContent = restoreText;
+      if ($("cpBtnParse")) $("cpBtnParse").textContent = "解析并封卷入库";
+
+      /* 保存成功：回执带更新后的完整 run，立即刷新当前卷子的答案展示，
+         不再等用户手动重新打开才发现生效（修复「仅展示未刷新」那一层）。 */
+      var paper = (d && d.paper) || {};
+      var run = paper.run || null;
+      if (run) {
+        S.runId = paper.run_id || run.id || S.runId;
+        S.intakePaperId = d.paper_id || savedId;
+        try { showResult(fromRun(run), []); } catch (e) { /* 质检卡刷新失败不影响落库回执 */ }
+        if ($("cpFilled")) $("cpFilled").textContent = run.code_filled || "";
+        $("cpResultCard").hidden = false;
+        /* 「答案参考」文本框同步成后端按权威答案重建的回填内容：再次打开仍是新值 */
+        if ($("cpAnswer")) $("cpAnswer").value = run.code_filled || $("cpAnswer").value;
+      }
+      loadPapers();
+      S.editingPaperId = null;
+
+      var changed = (d && d.changed_blanks) || [];
+      var msg = !d.partial
+        ? "已按新原文重新封卷，卷库与后续开考都采用新答案。"
+        : (changed.length
+          ? "已保存到这份卷子：B" + changed.join("、B") + " 的答案参考已更新，其它空与题库原始数据均未改动。"
+          : "已保存：未检测到答案变化，卷子内容保持不变。");
+      toast(msg, "success");
+      setTip(msg, "ok");
+
       if (window.appUI && window.appUI.switchView) {
         window.appUI.switchView("library");          // 自动跳回「我的题库」
         revealPaperInLibrary(savedId);               // 定位并高亮刚编辑的这份试卷
-        setTip("已按新原文重新封卷，已返回「我的题库」。", "ok");
-      } else {
-        setTip("已按新原文重新封卷，卷库与后续开考都采用新答案。", "ok");
       }
+      /* 切到 library 之后 refreshPaperViews 才会命中分支、真正作废旧缓存并重拉数据 */
+      if (window.appUI && typeof window.appUI.refreshPaperViews === "function") {
+        try { window.appUI.refreshPaperViews(savedId); } catch (e) { /* 不影响保存回执 */ }
+      }
+      return d;
+    }).catch(function (e) {
+      btn.disabled = false;
+      btn.classList.remove("is-loading");
+      btn.textContent = restoreText;
+      var msg = (e && e.message) || "未知错误";
+      /* 失败：明确且醒目的反馈；保留编辑态与文本框内容以便直接重试，不跳转、不产生脏数据 */
+      toast("保存失败，卷子未做任何改动：" + msg, "error");
+      setTip("保存失败：" + msg + "（原卷未改动，可修改后重试）", "error");
     });
   }
 

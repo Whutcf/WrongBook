@@ -813,14 +813,37 @@ def delete_paper(conn: sqlite3.Connection, paper_id: int) -> bool:
 
 
 def update_paper_meta(
-    conn: sqlite3.Connection, paper_id: int, *, title: str = "", language: str = "python"
+    conn: sqlite3.Connection, paper_id: int, *,
+    title: str = "", language: str = "python", commit: bool = True,
 ) -> None:
-    """仅改卷子的展示元信息（标题 / 类型），不动已封存的空位与答案。"""
+    """仅改卷子的展示元信息（标题 / 类型），不动已封存的空位与答案。
+
+    ``commit=False`` 供「保存到这份卷子」这类多步写入复用：调用方把元信息与
+    答案写在同一事务里统一提交，中途失败可整体回滚，避免留下「标题已改、
+    答案没改」的脏数据。
+    """
     conn.execute(
         "UPDATE code_papers SET title = ?, language = ? WHERE id = ?",
         (title, language, paper_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
+
+
+def update_code_filled(
+    conn: sqlite3.Connection, paper_id: int, run_id: int, code_filled: str
+) -> None:
+    """同步「回填后的完整代码」（编辑页的「答案参考」文本框读的就是它）。
+
+    只写当前 run 与当前卷子的代码块，不新建 run、不动模板，也不提交事务；
+    由调用方与其它写入一起 commit。
+    """
+    conn.execute(
+        "UPDATE verify_runs SET code_filled = ? WHERE id = ?", (code_filled, run_id)
+    )
+    conn.execute(
+        "UPDATE code_blocks SET code_filled = ? WHERE paper_id = ?", (code_filled, paper_id)
+    )
 
 
 def update_paper_full(
@@ -833,12 +856,16 @@ def update_paper_full(
     answer_file: str = "",
     answer_path: str = "",
     answer_regions: str = "",
+    commit: bool = True,
 ) -> None:
     """重新上传文件重封卷时，连文件元信息一起刷新（文件名 / 答案原件路径 / 区段坐标）。
 
     与 update_paper_meta（只改标题/类型）区分：用户改了源文件内容后重新上传，
     必须同步更新 paper_file / answer_file / answer_path，否则后续「同名文件」查重会失效，
     且「参考答案原文」拼图仍指向旧文件。
+
+    ``commit=False`` 与元信息同构：让调用方把「改元信息 + 写新 run」合成一个事务，
+    重解析失败时整体回滚，不留下「文件名已刷新、答案还是旧的」半截数据。
     """
     ensure_schema(conn)
     conn.execute(
@@ -848,11 +875,13 @@ def update_paper_full(
            WHERE id = ?""",
         (title, language, paper_file, answer_file, answer_path, answer_regions, paper_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def update_blank_answers(
-    conn: sqlite3.Connection, paper_id: int, edits: list[dict[str, Any]]
+    conn: sqlite3.Connection, paper_id: int, edits: list[dict[str, Any]],
+    *, commit: bool = True,
 ) -> tuple[int, dict[str, Any] | None]:
     """逐空改答案（不重新解析整份卷）。
 
@@ -860,7 +889,8 @@ def update_blank_answers(
     重算 ``role_ok / result / needs_review`` 与整卷的通过状态。考试取答案走
     ``blank_checks.filled_raw``，改完立即对后续开考生效。
 
-    返回 (改动空位数, 更新后的卷子)。
+    ``commit=False`` 让调用方把「改答案 + 改元信息 + 同步 code_filled」合成一个
+    事务；失败整体回滚，不留半截数据。返回 (改动空位数, 更新后的卷子)。
     """
     from . import core  # 延迟导入，避免循环依赖
 
@@ -949,7 +979,8 @@ def update_blank_answers(
     # 答案刷新后，按当前 run 的标准答案重判该卷所有历史考试记录的分数并落库，
     # 避免「学习统计」列表(读缓存 score)与详情(实时重判)分数不一致。
     recompute_attempt_scores(conn, paper_id)
-    conn.commit()
+    if commit:
+        conn.commit()
     return changed, get_paper(conn, paper_id)
 
 
