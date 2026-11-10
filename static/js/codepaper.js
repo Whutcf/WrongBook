@@ -111,6 +111,15 @@
   /* 主站 app.js 与本文件是两个独立 IIFE。弹窗 / 全局提示通过 window.appUI
      桥接复用；桥接未就绪时退回本模块自带的 setTip，保证点击永远有可见反馈。 */
   function ui() { return window.appUI || null; }
+  /* 醒目提示：优先复用主站 toast（带图标/动画/顶部堆叠/自动消失，与全站一致，
+     绝不会被忽略）；桥接未就绪时退回 setTip。用于「保存」等需要强反馈的操作。 */
+  function toast(msg, type) {
+    var app = ui();
+    if (app && typeof app.showToast === "function") {
+      try { app.showToast(msg, type || "info"); return; } catch (e) { /* 退回 setTip */ }
+    }
+    setTip(msg, type === "success" ? "ok" : type === "error" ? "error" : "");
+  }
   /* 复用主站「请确认」弹窗（返回 Promise<boolean>）；桥接未就绪时退回原生 confirm。 */
   function uiConfirm(title, message, confirmText, danger) {
     var u = ui();
@@ -1482,15 +1491,15 @@
   /* 入库质检页内联订正：直接改最新 run 的标准答案并重算质检判定 */
   function saveAuditEdits() {
     var id = S.auditPaperId;
-    if (!id) { setTip("请先在上方选择一份卷子。", "error"); return; }
+    if (!id) { toast("请先在上方选择一份卷子。", "error"); return; }
     var inputs = $$("#cpRows .cp-ans-input");
-    if (!inputs.length) { setTip("本卷没有可保存的空位答案。", "warn"); return; }
+    if (!inputs.length) { toast("本卷没有可保存的空位答案。", "error"); return; }
     var dirty = inputs.filter(function (i) {
       return i.parentNode && i.parentNode.classList &&
         i.parentNode.classList.contains("is-dirty");
     }).length;
     if (!dirty) {
-      setTip("还没有改动任何答案：请先在「标准答案」列修改，再点「保存修改」。", "warn");
+      toast("还没有改动任何答案：请先在「标准答案」列修改，再点「保存修改」。", "info");
       return;
     }
     var edits = inputs.map(function (i) {
@@ -1506,12 +1515,12 @@
     }).then(function (d) {
       btn.disabled = false;
       btn.textContent = "保存修改";
-      setTip("保存成功，已写入 " + (d.changed || 0) + " 个空的答案，正在重新判定质检结果…", "ok");
+      toast("保存成功，已写入 " + (d.changed || 0) + " 个空的答案，正在重新判定质检结果…", "success");
       loadAudit(id);
     }).catch(function (e) {
       btn.disabled = false;
       btn.textContent = "保存修改";
-      setTip("保存失败：" + e.message, "error");
+      toast("保存失败：" + (e && e.message ? e.message : e), "error");
     });
   }
 
