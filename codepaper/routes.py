@@ -186,6 +186,10 @@ def _derive_paper_title(split_secs: list, matched_section: int, paper_doc: Any, 
     # 在它前面的题干段；若退而求其次去扫「整本文档首行标题」，会抽到封面/整本书的标题，
     # 所以用编号精确查索引最可靠，优先级必须高于整本文档标题。
     key = re.sub(r"\s+", "", (paper_doc.meta.get("source_stem") or paper_doc.meta.get("notebook_title") or ""))
+    # 兜底：调用方若漏传 source_stem（如改版后异步解析路径一度丢失），用 stem 参数再试一次，
+    # 保证「编号→全名」精确索引命中，避免退回整本书标题这类退化（1.1.5 回归的根源）。
+    if not key and stem:
+        key = re.sub(r"\s+", "", stem)
     if key and title_index and key in title_index and _looks_like_real_name(title_index[key]):
         cands.append(title_index[key])
     # ① 命中区段标题（多级编号+名称，如 1.1.4 电商平台…）
@@ -551,6 +555,13 @@ def _parse_compute(
     由于后台线程无法访问 request 上下文，这里统一从 ``params`` 读参数，并用一个
     只暴露 ``.form`` 的轻量 shim 满足 _resolve_answer 对 request.form 的读取。
     """
+    # —— 把文件名编号注入 paper_doc.meta，供 _derive_paper_title 按编号精确查标题索引 ——
+    # 这是异步解析路径（大体积答案 PDF 走这里）此前漏掉的关键一步：后台 worker 线程收到的
+    # paper_doc 只带内容、没有 source_stem，导致标题派生退回整本书封面标题（即 1.1.5 回归：
+    # 上传答案原件后识别成「人工智能训练师（三级）操作技能复习题」整本书名而非区段全名）。
+    # 同步 parse() 路径在调用前已注入 source_stem，此处补齐以保证两条路径行为完全一致。
+    if stem and paper_doc is not None:
+        paper_doc.meta = {**paper_doc.meta, "source_stem": stem}
     # —— 试卷类型自动识别：仅当用户显式选了具体类型（非默认「通用」）时用其选择，否则粗判 ——
     req_lang = params.get("language") or ""
     if req_lang in ingest.PAPER_TYPES and req_lang != "通用":
