@@ -15,6 +15,17 @@
   var root = document.getElementById("cpEmbed");
   if (!root) return; /* 视图未渲染时静默退出，不抛错影响主站其它页面 */
 
+  /* 把三个模态 portal 到 body：本视图整卷页嵌在 .page 内，而 .page 的切页
+     动画 pageIn 带 transform，会让 position:fixed 相对「页面内容」而非视口定位，
+     导致「参考答案原文」等弹窗锚定在页面右上角、整体偏上、顶部露出页头、内容区被挤出可视范围。
+     移到 body 后脱离一切 transform 祖先，fixed 重新相对视口居中（app.js 库标签面板已用同样手法）。
+     模态 CSS 本就无 .cp-embed 前缀、属 body 层安全；内部的 var(--cp-accent) 已在 codepaper.css 补了
+     var(--primary) 兜底，移植到 body 后令牌仍有效。 */
+  ["cpSliceModal", "cpAnsEditModal", "cpEditAnsModal"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el && el.parentNode !== document.body) document.body.appendChild(el);
+  });
+
   var $ = function (id) { return document.getElementById(id); };
   var $$ = function (sel, ctx) {
     return Array.prototype.slice.call((ctx || root).querySelectorAll(sel));
