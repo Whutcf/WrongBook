@@ -1190,6 +1190,48 @@ def seed_demo_paper():
         conn.close()
 
 
+def _reference_from_checks(run: dict) -> str:
+    """编辑页「答案参考」的权威回显源，与「改答案」入口同源。
+
+    ``verify_runs.code_filled`` 是解析管线当初回填的副本，部分空会被相邻固定
+    文本串位覆盖（例：#51 的 ``print({{2}})`` 被填成上一行的
+    ``"数据采集完成，已加载到DataFrame中"``，而 B2 权威答案是 ``data.head()``）。
+    「改答案」读 ``blank_checks.filled_raw``，「编辑」却直接读 code_filled，
+    两个入口因此显示不同答案。
+
+    处理分两种：
+    - code_filled 里逐空显示值与权威答案不一致（历史串位）→ 按 ``{{n}} ↔
+      blank_no`` 用当前 checks 重建，串位被纠正；
+    - 已经一致（用户在本系统里保存过，可能还追加了模板外内容）→ 原样返回
+      code_filled，保证「保存 → 刷新 → 再次打开」内容不回滚、不被重建覆盖。
+
+    只作为附加字段返回，不改 code_filled 本身；复习 / 质检 / 历史等其它展示不变。
+    """
+    template = run.get("code_template") or ""
+    by_no = {
+        int(c["blank_no"]): (c.get("filled_raw") or "")
+        for c in (run.get("checks") or [])
+    }
+    reference = core.fill(template, by_no)
+    current = run.get("code_filled") or ""
+    if not template or not by_no or not current:
+        return reference
+    # 已规范化（用户在本系统保存过）：每个非空权威答案都能在原文里找到。
+    # 原样返回，保留用户追加的模板外内容，保证「保存 → 刷新 → 再次打开」不回滚。
+    # 用内容判定而非再次 align，避免解析漂移把正常原文误判成串位。
+    if all((not v) or (v in current) for v in by_no.values()):
+        return current
+    # 有权威答案缺席 → 历史回填把它串位成了别的文本，按 {{n}} 映射重建纠正。
+    return reference
+
+
+def _attach_reference(paper):
+    """给详情 / 保存回执的 run 附加权威回显字段（不覆盖 code_filled）。"""
+    if paper and paper.get("run"):
+        paper["run"]["answer_reference"] = _reference_from_checks(paper["run"])
+    return paper
+
+
 @codepaper_bp.route("/api/code-papers/papers/<int:paper_id>")
 def paper_detail(paper_id: int):
     """管理端详情：含完整答案与逐空质检结果，仅供「校验」页使用。"""
@@ -1198,7 +1240,7 @@ def paper_detail(paper_id: int):
         paper = store.get_paper(conn, paper_id)
         if paper is None:
             return jsonify({"ok": False, "error": "卷子不存在"}), 404
-        return jsonify({"ok": True, "paper": paper})
+        return jsonify({"ok": True, "paper": _attach_reference(paper)})
     finally:
         conn.close()
 
@@ -1241,30 +1283,39 @@ def papers_by_file():
 def _save_answer_reference(
     conn, paper, run, *, paper_text, answer_text, title, language
 ):
-    """「保存到这份卷子」的局部订正：只把用户真正改动的那一空写回**当前 run**。
+    """「保存到这份卷子」：以用户提交的**答案参考原文**为唯一权威，原样持久化。
 
-    编辑页的「答案参考」文本框载入的是 ``run.code_filled``（按模板回填后的完整代码）。
-    过去保存时整份重新 ``align`` 并 ``save_result`` 新建一个 run，真实卷子上会把
-    其它空的答案一起漂移（人工订正过的空被覆盖）、甚至把已封存卷打回待复核。
+    上一版把编辑保存窄化成「反推差异空 → core.fill 重建原文」，三个假设都不成立：
+      ① 改动可能不在空位里（注释、排版、固定代码），align 识别不到就一行都不写，
+         却返回 200「已保存：未检测到答案变化」——用户看到成功但刷新仍是旧内容；
+      ② 只在识别出空位差异时才写库，且写的是 core.fill(template, 权威答案) 的
+         重建结果，用户追加的注释 / 排版等模板外内容会被抹掉；
+      ③ paper_text 一变就 save_result 新建 run，已封存被打回待复核、人工答案漂移。
 
-    这里改为「双对齐取差异」：用**改前**与**改后**的答案参考分别与同一份试卷对齐，
-    两次对齐共有的解析漂移会互相抵消，剩下的差异就是用户实际改动的目标空。
-    只把这些空写进当前 run，模板、其它空、其它卷、题库原始数据一律不动。
+    现在：答案参考原文**恒写**（verify_runs / code_blocks.code_filled），绝不重建；
+    空位答案只是从原文派生的副产品，用同一基准的双对齐取差异同步，保证考试判分跟上。
+    试卷原文若变化且空位结构一致，只更新模板（保留原空位编号）；一律不新建 run、
+    不整卷重解析、不重算封卷状态。历史 run、考试记录、其它卷与题库原始数据保持原样。
 
     所有写入共用一个事务，任一步失败整体回滚，绝不留下半截数据。
     """
     paper_id = int(paper["id"])
     run_id = int(paper["run_id"])
     template = run.get("code_template") or ""
-    old_filled = run.get("code_filled") or ""
     old_map = {
         int(c["blank_no"]): (c["filled_raw"] or "").strip()
         for c in (run.get("checks") or [])
     }
+    # 双对齐的「改前原文」必须与编辑框载入值同源（权威答案重建值）。
+    # 若仍读历史 code_filled，串位的空会被当成「用户改动」误写回权威答案。
+    old_filled = _reference_from_checks(run)
     if not old_map or not template:
         raise ValueError("这份卷子还没有可订正的答案空位，请先在「入库质检」完成封卷。")
 
-    paper_doc = ingest.from_text(paper_text, "paper", "text", "paper-text")
+    # 对齐基准恒取当前 run 的模板，不受用户是否改了试卷原文影响：两次 align
+    # 用同一份基准，共有的抽取漂移互相抵消，剩下的差异才是用户真正动过的空。
+    base_paper_text = re.sub(r"\{\{\d+\}\}", "____", template).strip()
+    paper_doc = ingest.from_text(base_paper_text, "paper", "text", "paper-base")
     base = core.align(
         paper_doc, ingest.from_text(old_filled, "answer", "text", "answer-base"), []
     )
@@ -1279,8 +1330,7 @@ def _save_answer_reference(
             "已取消保存，原卷未做任何改动；如需调整试卷结构，请用「重新上传文件重封卷」。"
         )
 
-    # 双重条件：① 相对「改前对齐」有差异（说明用户动过这一空）；
-    # ② 相对「当前 run 的权威答案」也不同（对齐漂移偶尔会自己抵消回来）。
+    # 双重条件：① 相对「改前原文对齐」有差异；② 相对当前 run 的权威答案也不同。
     # 只写最终值确实变化的空，避免把无关空算进改动、也避免无意义的写库。
     edits = [
         {"blank_no": no, "raw": cand_map[no]}
@@ -1288,17 +1338,31 @@ def _save_answer_reference(
         if cand_map[no] != base_map[no] and cand_map[no] != old_map[no]
     ]
 
+    # 试卷原文改动：仅在空位数量与编号完全一致时更新模板，保持原有空位编号；
+    # 结构变化属于「重封卷」，明确拒绝并提示走文件通道，避免产生不一致脏数据。
+    nos = [int(x) for x in re.findall(r"\{\{(\d+)\}\}", template)]
+    new_template = None
+    if (paper_text or "").strip() != base_paper_text:
+        if not nos or len(nos) != len(re.findall(r"____", paper_text or "")):
+            raise ValueError(
+                "试卷原文的空位数量与当前卷子不一致，已取消保存（原卷未做任何改动）。"
+                "如需增删空位，请用「重新上传文件重封卷」。"
+            )
+        it = iter(nos)
+        candidate = re.sub(r"____", lambda _m: "{{%d}}" % next(it), paper_text)
+        if candidate != template:
+            new_template = candidate
+
     try:
-        # 元信息 / 答案 / 回填原文三处写入合成一个事务
+        # 元信息 / 目标空答案 / 模板 / 答案参考原文合成一个事务
         store.update_paper_meta(conn, paper_id, title=title, language=language, commit=False)
         changed = 0
         if edits:
             changed, _ = store.update_blank_answers(conn, paper_id, edits, commit=False)
-            # 用「局部订正后的权威答案」按模板重建 code_filled：改动空是新值，
-            # 其它空保持人工订正过的原值，绝不被重新对齐的漂移覆盖。
-            fresh = store.get_run(conn, run_id)
-            by_no = {int(c["blank_no"]): (c["filled_raw"] or "") for c in fresh["checks"]}
-            store.update_code_filled(conn, paper_id, run_id, core.fill(template, by_no))
+        if new_template is not None:
+            store.update_code_template(conn, paper_id, run_id, new_template)
+        # 关键：用户提交的原文原样落库；不再 core.fill 重建，也不因「没有空位差异」跳过。
+        store.update_code_filled(conn, paper_id, run_id, answer_text)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -1313,8 +1377,10 @@ def _save_answer_reference(
         "blank_count": len(old_map),
         "changed": changed,
         "changed_blanks": [e["blank_no"] for e in edits],
+        "text_saved": True,     # 答案参考原文已原样写入，前端据此给「已保存」回执
+        "template_saved": new_template is not None,
         "partial": True,
-        "paper": store.get_paper(conn, paper_id),  # 含最新 run，供前端立即刷新
+        "paper": _attach_reference(store.get_paper(conn, paper_id)),  # 含最新 run 与权威回显
     }
 
 
@@ -1323,12 +1389,13 @@ def paper_update(paper_id: int):
     """编辑页「保存到这份卷子」：改答案参考后写回当前卷子，不新建卷子。
 
     同时支持两条通道：
-    - JSON：paper_text / answer_text（文本框改原文）。试卷原文未变时走**局部订正**，
-      只更新被改动的目标空；试卷原文也改了才整卷重新解析封卷。
+    - JSON：paper_text / answer_text（文本框改原文）。统一走「原文权威持久化」：
+      答案参考原文原样落库，空位答案按差异同步，试卷原文变化只更新模板；
+      **不新建 run、不整卷重解析、不改封卷状态**，因此原有答案与历史数据不丢失。
     - multipart 文件：paper / answer 两份文件（重新上传文件重封卷，连文件名 /
-      答案原件路径一起刷新）。文件通道走与录入完全相同的对齐管线。
+      答案原件路径一起刷新）。结构性变更（增删空位）走这条通道。
 
-    保存成功后考试 / 复习 / 再次打开编辑立即采用新答案；同名文件查重也据此保持准确。
+    保存成功后考试 / 复习 / 再次打开编辑 / 刷新页面立即采用新答案参考。
     """
     conn = _conn()
     try:
@@ -1338,57 +1405,30 @@ def paper_update(paper_id: int):
 
         if request.is_json:
             payload = request.get_json(silent=True) or {}
+            # 试卷原文比对需要 strip（避免尾部空白被误判成「改了试卷结构」）；
+            # 答案参考原文**不 strip**，用户提交什么就原样存什么，回显才能完全一致。
             paper_text = (payload.get("paper_text") or "").strip()
-            answer_text = (payload.get("answer_text") or "").strip()
-            if not paper_text or not answer_text:
+            answer_text = payload.get("answer_text") or ""
+            if not paper_text or not answer_text.strip():
                 return jsonify({"ok": False, "error": "paper_text / answer_text 不能为空"}), 400
             title = payload.get("title") or paper.get("title") or "整卷入库"
             language = payload.get("language") or paper.get("language") or "python"
-            reviewed_all = bool(payload.get("reviewed_all"))
-            use_llm = bool(payload.get("use_llm"))
-
-            # 编辑页载入试卷原文时把 {{n}} 换成 ____；只要用户没动左侧文本框，
-            # 就说明这是一次「只改答案参考」的保存，走局部订正。
             run = store.get_run(conn, paper["run_id"]) if paper.get("run_id") else None
-            current_paper_text = ""
-            if run is not None:
-                current_paper_text = re.sub(
-                    r"\{\{\d+\}\}", "____", run.get("code_template") or ""
-                ).strip()
-            if run is not None and paper_text == current_paper_text:
-                try:
-                    return jsonify(_save_answer_reference(
-                        conn, paper, run,
-                        paper_text=paper_text, answer_text=answer_text,
-                        title=title, language=language,
-                    ))
-                except ValueError as exc:
-                    return jsonify({"ok": False, "error": str(exc)}), 400
-                except Exception as exc:  # noqa: BLE001
-                    return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 500
-
-            # 试卷原文也改了：保留原有的整卷重新解析封卷能力。
-            paper_doc = ingest.from_text(paper_text, "paper", "text", "paper-text")
-            answer_doc = ingest.from_text(answer_text, "answer", "text", "answer-text")
-            result, llm_applied, llm_notes = _align_and_assist(
-                paper_doc, answer_doc, [], reviewed_all=reviewed_all, use_llm=use_llm
-            )
+            if run is None:
+                return jsonify({"ok": False, "error": "这份卷子还没有解析结果，无法保存修改"}), 400
+            # JSON 通道统一走「原文权威持久化」。过去 paper_text 一变就整卷重解析并
+            # 新建 run，实测会把已封存卷打回待复核、把人工订正过的空漂移掉；这里
+            # 改为只更新模板（空位结构不变时），原 run / 状态 / 历史记录一律保留。
             try:
-                # 元信息不再单独 commit：与 save_result 合成一个事务，失败可整体回滚
-                store.update_paper_meta(conn, paper_id, title=title, language=language, commit=False)
-                run_id = store.save_result(conn, paper_id, result)
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            updated = store.get_paper(conn, paper_id)
-            return jsonify({
-                "ok": True, "version": VERSION, "paper_id": paper_id, "run_id": run_id,
-                "title": title, "blank_count": len(result.blanks),
-                "llm_applied": llm_applied, "llm_notes": llm_notes,
-                # 回执带完整解析结果：前端 runParseSuccess 不再拿 {} 渲染出空质检卡
-                "result": result.to_dict(), "paper": updated,
-            })
+                return jsonify(_save_answer_reference(
+                    conn, paper, run,
+                    paper_text=paper_text, answer_text=answer_text,
+                    title=title, language=language,
+                ))
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            except Exception as exc:  # noqa: BLE001
+                return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 500
 
         # —— 文件通道：重新上传试卷 / 答案文件重封卷（连文件元信息一起刷新）——
         pf = request.files.get("paper")

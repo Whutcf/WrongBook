@@ -798,7 +798,11 @@
       var opts = Array.prototype.slice.call($("cpLang").options);
       $("cpLang").value = opts.some(function (o) { return o.value === lang; }) ? lang : "通用";
       $("cpPaper").value = (run.code_template || "").replace(/\{\{\d+\}\}/g, "____");
-      $("cpAnswer").value = run.code_filled || "";
+      /* 答案参考必须与「改答案」入口同源：后端按 blank_checks.filled_raw 用
+         {{n}} ↔ blank_no 映射重建的完整答案。历史 code_filled 是解析回填副本，
+         部分空被相邻固定文本串位覆盖（如 #51 的 B2 行9），直接读它会出现
+         「改答案是 data.head()、编辑却是一句说明文字」。老数据无该字段时回退。 */
+      $("cpAnswer").value = run.answer_reference || run.code_filled || "";
       S.editingPaperId = id;
       S.intakePaperId = id;
       syncUploadBtn();
@@ -844,7 +848,10 @@
       btn.disabled = false;
       btn.classList.remove("is-loading");
       btn.textContent = restoreText;
-      if ($("cpBtnParse")) $("cpBtnParse").textContent = "解析并封卷入库";
+      /* 编辑态要一直保留到真正离开录入页。过去这里立刻把按钮复位成「解析并封卷入库」
+         并清空 S.editingPaperId，若主站桥接未就绪、页面没跳走，用户再点一次就会
+         退化成「新增一份卷子」，连续保存因此变成新建卷。 */
+      if ($("cpBtnParse")) $("cpBtnParse").textContent = "保存到这份卷子（重新封卷）";
 
       /* 保存成功：回执带更新后的完整 run，立即刷新当前卷子的答案展示，
          不再等用户手动重新打开才发现生效（修复「仅展示未刷新」那一层）。 */
@@ -856,22 +863,29 @@
         try { showResult(fromRun(run), []); } catch (e) { /* 质检卡刷新失败不影响落库回执 */ }
         if ($("cpFilled")) $("cpFilled").textContent = run.code_filled || "";
         $("cpResultCard").hidden = false;
-        /* 「答案参考」文本框同步成后端按权威答案重建的回填内容：再次打开仍是新值 */
-        if ($("cpAnswer")) $("cpAnswer").value = run.code_filled || $("cpAnswer").value;
+        /* 后端已把用户提交的答案参考原文原样落库：文本框同步成回执里的权威回显，
+           刷新 / 再次打开 / 连续保存都以同一份内容为准，不再回滚成串位旧值。 */
+        if ($("cpAnswer")) $("cpAnswer").value =
+          run.answer_reference || run.code_filled || $("cpAnswer").value;
       }
       loadPapers();
-      S.editingPaperId = null;
 
       var changed = (d && d.changed_blanks) || [];
-      var msg = !d.partial
-        ? "已按新原文重新封卷，卷库与后续开考都采用新答案。"
-        : (changed.length
-          ? "已保存到这份卷子：B" + changed.join("、B") + " 的答案参考已更新，其它空与题库原始数据均未改动。"
-          : "已保存：未检测到答案变化，卷子内容保持不变。");
+      /* 只要原文已落库就是「保存成功」。过去拿 changed_blanks 是否为空判成败，
+         改注释 / 排版这类不含空位差异的改动会被说成「未检测到答案变化，卷子内容
+         保持不变」，用户自然认为保存没生效。 */
+      var msg = (d && d.text_saved)
+        ? ("已保存到这份卷子：答案参考已写入" +
+           (changed.length ? "，B" + changed.join("、B") + " 的标准答案同步更新" : "（未改动空位答案）") +
+           (d.template_saved ? "，试卷原文同步更新" : "") +
+           "；其它空、原有内容与题库原始数据均未改动。")
+        : "已按新原文重新封卷，卷库与后续开考都采用新答案。";
       toast(msg, "success");
       setTip(msg, "ok");
 
       if (window.appUI && window.appUI.switchView) {
+        S.editingPaperId = null;                     // 真正离开录入页才退出编辑态
+        if ($("cpBtnParse")) $("cpBtnParse").textContent = "解析并封卷入库";
         window.appUI.switchView("library");          // 自动跳回「我的题库」
         revealPaperInLibrary(savedId);               // 定位并高亮刚编辑的这份试卷
       }

@@ -830,6 +830,22 @@ def update_paper_meta(
         conn.commit()
 
 
+def update_code_template(
+    conn: sqlite3.Connection, paper_id: int, run_id: int, code_template: str
+) -> None:
+    """刷新当前 run 的试卷模板（空位编号保持不变），不新建 run、不提交事务。
+
+    仅供编辑页「连试卷原文一起改」的保存复用：空位数量一致时按原编号回填
+    ``{{n}}``，避免整卷重解析新建 run 导致已封存状态回退、人工答案漂移。
+    """
+    conn.execute(
+        "UPDATE verify_runs SET code_template = ? WHERE id = ?", (code_template, run_id)
+    )
+    conn.execute(
+        "UPDATE code_blocks SET code_template = ? WHERE paper_id = ?", (code_template, paper_id)
+    )
+
+
 def update_code_filled(
     conn: sqlite3.Connection, paper_id: int, run_id: int, code_filled: str
 ) -> None:
