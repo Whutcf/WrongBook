@@ -567,7 +567,8 @@
     var empty = el("option", "", "选择一份卷子…");
     empty.value = "";
     sel.appendChild(empty);
-    S.papers.forEach(function (p) {
+    /* 仅列出「需要质检」的卷子（待复核 / 未封存）；已封存的不再出现在质检下拉框 */
+    S.papers.filter(function (p) { return p.verified !== true; }).forEach(function (p) {
       var o = el("option", "", (p.title || ("整卷 " + p.id)) + " · " + (p.blank_count || 0) + " 空");
       o.value = String(p.id);
       sel.appendChild(o);
@@ -1483,13 +1484,13 @@
     var id = S.auditPaperId;
     if (!id) { setTip("请先在上方选择一份卷子。", "error"); return; }
     var inputs = $$("#cpRows .cp-ans-input");
-    if (!inputs.length) return;
+    if (!inputs.length) { setTip("本卷没有可保存的空位答案。", "warn"); return; }
     var dirty = inputs.filter(function (i) {
       return i.parentNode && i.parentNode.classList &&
         i.parentNode.classList.contains("is-dirty");
     }).length;
     if (!dirty) {
-      setTip("还没有改动任何答案：请先在「标准答案」列修改，再点「保存修改」。");
+      setTip("还没有改动任何答案：请先在「标准答案」列修改，再点「保存修改」。", "warn");
       return;
     }
     var edits = inputs.map(function (i) {
@@ -1505,7 +1506,7 @@
     }).then(function (d) {
       btn.disabled = false;
       btn.textContent = "保存修改";
-      setTip("已保存 " + (d.changed || 0) + " 个空的答案，正在重新判定质检结果…", "ok");
+      setTip("保存成功，已写入 " + (d.changed || 0) + " 个空的答案，正在重新判定质检结果…", "ok");
       loadAudit(id);
     }).catch(function (e) {
       btn.disabled = false;
@@ -2582,9 +2583,13 @@
       syncIntakeReviewBtn(!!d.passed);
       loadPapers();
       setTip(d.passed
-        ? (d.forced ? "已人工复核通过：覆盖系统分歧并封存，可在「我的题库」开考。" : "人工复核完成，质检通过。")
+        ? (d.forced ? "已人工复核通过：覆盖系统分歧并封存，已返回「我的题库」。" : "人工复核完成，质检通过，已返回「我的题库」。")
         : "复核已记录，但仍有硬冲突。",
         d.passed ? "ok" : "error");
+      /* 复核提交后回到「我的题库」，让用户立刻看到这份卷子的状态更新 */
+      var lib = document.querySelector('[data-view="library"]');
+      if (lib) { lib.click(); }
+      else if (window.appUI && window.appUI.switchView) { window.appUI.switchView("library"); }
     }).catch(function (e) {
       btn.disabled = false;
       btn.textContent = restore;
