@@ -1213,33 +1213,103 @@ def _split_template(template: str) -> tuple[list[str], list[int]] | None:
     return segs, nos
 
 
-def _extract_blank_values(template: str, text: str) -> dict[int, str] | None:
-    """按模板固定段在答案原文里顺序定位，取出每个空位**实际显示**的值。
+# ---------------------------------------------------------------------------
+# 答案参考的「空白容忍」对位
+#
+# 答案参考是给人看的，用户会按自己的习惯在两段代码之间加一个空行分段、调整
+# 缩进、删掉逗号后的空格。旧实现把模板固定段当**逐字精确**子串去 find：
+#   · 多一个空行 → 空行被夹进某个空的显示值 → 触发「插入了新的行」闸门拒绝保存；
+#   · 改一处缩进 / 删一个空格 → 固定段 find 失败 → 判成「无法逐空对应」拒绝保存。
+# 实测真实库 #51：上面四种调整里有三种直接保存不了，而页面右下角还写着
+# 「排版可不同」，前后矛盾。
+#
+# 现在把固定段编译成「非空白字符精确、空白任意」的正则，顺序定位每个 {{n}}：
+# 排版随便调，代码文字必须一字不差。答案值比对统一按去空白键判定，
+# 纯排版差异不写回权威答案，但原文照常落库，刷新回显不会把分段抹掉。
+# ---------------------------------------------------------------------------
+_WS_KEY_RE = re.compile(r"\s+")
 
-    纯字符串定位，不走 ``core.align``，因此没有解析漂移（旧实现用双对齐反推差异，
-    实测会把未改动的空误判成变化、写错权威答案）。用户只在末尾加注释、或改了某个
-    空的内容，都能稳定定位；固定段被改动（结构变化）时返回 None，调用方保守处理。
+
+def _ws_key(value: str) -> str:
+    """去掉全部空白的比较键，只用于判断「内容有没有变」，绝不用于回填。"""
+    return _WS_KEY_RE.sub("", value or "")
+
+
+def _segment_patterns(segment: str) -> list[re.Pattern]:
+    """把一个模板固定段编译成空白容忍的正则，按辨识力从高到低排列。
+
+    - 空串：没有锚点，返回空列表（调用方按零宽处理）；
+    - 纯空白段（两空之间的换行 / 空格）：优先要求同样的空白形态，避免把答案
+      值内部的空格误当成空位边界；失败再放宽到任意空白，容忍用户把换行
+      改成多个空行或空格来分段；
+    - 有内容段：先按「非空白词」拼接、词间允许任意空白（覆盖加空行、调缩进、
+      删逗号后的空格）；失败再回退到「逐字符允许空白」，覆盖在表达式内部
+      插入空格这类极端排版。两种都要求非空白字符逐字精确。
+    """
+    if segment == "":
+        return []
+    tokens = [t for t in re.split(r"\s+", segment) if t]
+    if not tokens:
+        if "\n" in segment or "\r" in segment:
+            return [re.compile(r"[ \t\r]*\n\s*"), re.compile(r"\s+")]
+        return [re.compile(r"[ \t]+"), re.compile(r"\s+")]
+    word = r"\s*" + r"\s*".join(re.escape(t) for t in tokens) + r"\s*"
+    pats = [re.compile(word)]
+    # 逐字符级兜底只在固定段不太长时启用，避免正则过长拖慢匹配
+    chars = [ch for ch in segment if not ch.isspace()]
+    if len(chars) <= 400:
+        loose = r"\s*" + r"\s*".join(re.escape(ch) for ch in chars) + r"\s*"
+        if loose != word:
+            pats.append(re.compile(loose))
+    return pats
+
+
+def _search_segment(segment: str, text: str, pos: int) -> tuple[int, int] | None:
+    """从 pos 起定位一个固定段，返回 (起点, 终点)；定位不到返回 None。"""
+    pats = _segment_patterns(segment)
+    if not pats:
+        return (pos, pos)
+    for pat in pats:
+        m = pat.search(text, pos)
+        if m:
+            return (m.start(), m.end())
+    return None
+
+
+def _locate_blank_values(template: str, text: str) -> dict | None:
+    """顺序定位模板的全部固定段，夹出每个 ``{{n}}`` 的显示值。
+
+    返回 ``{"shown": {no: 原文片段}, "tail": 末尾固定段之后的剩余文本}``；
+    任一固定段定位失败（说明用户改了代码文字 / 增删了空位）返回 None。
+    ``tail`` 用于「只改试卷原文」时把用户末尾追加的内容原样保留。
     """
     split = _split_template(template)
     if split is None:
         return None
     segs, nos = split
+    bounds: list[tuple[int, int]] = []
     pos = 0
-    shown: dict[int, str] = {}
-    for i, no in enumerate(nos):
-        anchor = text.find(segs[i], pos)
-        if anchor < 0:
+    for seg in segs:
+        hit = _search_segment(seg, text, pos)
+        if hit is None:
             return None
-        start = anchor + len(segs[i])
-        pos = start
-        # 模板末尾若还有固定文本，必须把它之前的位置作为该空的结束；
-        # 否则用户在末尾追加的注释会被误当成最后一个空的答案写进权威答案。
-        nxt = segs[i + 1] if i + 1 < len(segs) else ""
-        end = text.find(nxt, pos) if nxt else len(text)
-        if end < 0:
-            return None
-        shown[no] = text[start:end]
-    return shown
+        bounds.append(hit)
+        pos = hit[1]
+    shown = {
+        no: text[bounds[i][1]:bounds[i + 1][0]]
+        for i, no in enumerate(nos)
+    }
+    return {"shown": shown, "tail": text[bounds[-1][1]:]}
+
+
+def _extract_blank_values(template: str, text: str) -> dict[int, str] | None:
+    """按模板固定段顺序定位，取出每个空位**实际显示**的值（空白容忍版）。
+
+    纯字符串 / 正则定位，不走 ``core.align``，因此没有解析漂移。保留此函数签名
+    供外部回归脚本与其它调用点使用；需要末尾追加内容时用 ``_locate_blank_values``。
+    """
+    loc = _locate_blank_values(template, text)
+    return loc["shown"] if loc else None
 
 
 def _reference_from_checks(run: dict) -> str:
@@ -1254,9 +1324,9 @@ def _reference_from_checks(run: dict) -> str:
     逐空严格判定：把 code_filled 按模板固定段切分，取出每个 ``{{n}}`` 位置的
     显示值，与 checks 权威答案逐一比对。**不能**用「答案字符串在全文里出现过」
     这种弱判据——同一个片段常在别处出现，串位数据会被误判成「已一致」而原样
-    返回错误原文（上一轮修复失效的原因之一）。
-    - 全部一致（用户在本系统保存过，可能追加了模板外内容）→ 原样返回，
-      保证「保存 → 刷新 → 再次打开」不回滚；
+    返回错误原文（上一轮修复失效的原因之一）。比对按去空白键进行：用户为方便
+    查看加的空行 / 缩进 / 空格不算内容差异，保持原样回显不回滚。
+    - 全部一致（用户在本系统保存过，可能追加了模板外内容或调整过排版）→ 原样返回；
     - 有空不一致 / 无法切分 → 按 ``{{n}} ↔ blank_no`` 重建纠正串位。
 
     只作为附加字段返回，不改 code_filled 本身；复习 / 质检 / 历史等其它展示不变。
@@ -1270,9 +1340,10 @@ def _reference_from_checks(run: dict) -> str:
     current = run.get("code_filled") or ""
     if not template or not by_no or not current:
         return reference
-    shown = _extract_blank_values(template, current)
-    if shown is None or any(
-        shown.get(n, "").strip() != (v or "").strip() for n, v in by_no.items()
+    loc = _locate_blank_values(template, current)
+    if loc is None or any(
+        _ws_key(loc["shown"].get(n, "")) != _ws_key(v or "")
+        for n, v in by_no.items()
     ):
         return reference
     return current
@@ -1344,17 +1415,20 @@ def _save_answer_reference(
 
     这一版彻底移除 ``core.align`` 双对齐反推差异：解析对齐本身有漂移，实测会把
     「未作任何改动」也反推出差异空，把展示副本里的串位文本写回权威答案
-    （2026-11-10 #51 事故）。现在只用模板固定段做**纯字符串切分**定位每个
-    ``{{n}}`` 位置，逐空与 ``blank_checks.filled_raw`` 比对：
+    （2026-11-10 #51 事故）。现在用模板固定段做**空白容忍的纯字符串定位**找出每个
+    ``{{n}}``，逐空与 ``blank_checks.filled_raw`` 按去空白键比对：
 
-    - 原文 = 按当前权威答案重建的结果（允许尾部追加内容）→ 差异空才是用户真正
-      改动的空，只把这些空写回，其它空一律不动；
-    - 原文含中间插入 / 固定代码改动，无法由逐空替换解释 → **明确拒绝**，避免把
-      注释、排版误写进某个空的权威答案，也不留下「保存了却回显丢失」的不一致；
+    - 只调排版（加空行分段 / 改缩进 / 增删空格）→ 逐空内容与权威答案一致，
+      标准答案零改动，但提交的原文照常落库，刷新回显保留用户分段；
+    - 改了某个空的答案内容 → 只把这个空写回，其它空一律不动；
+    - 改了固定代码文字 / 增删空位 / 在空位内插入带实质内容的新行 → **明确拒绝**，
+      绝不把注释、结构改动误写进权威答案，也不留下「保存了却回显丢失」的不一致；
     - 完全未改动 → 纯 no-op，一次库都不写。
 
-    试卷原文只有空位结构一致时才更新模板；一律不新建 run、不整卷重解析、不改封卷
-    状态。历史 run、考试记录、其它卷与题库原始数据保持原样。所有写入单事务。
+    固定段定位只放宽空白，非空白字符必须逐字精确，因此「排版随便调」不会放宽
+    结构校验。试卷原文只有空位结构一致时才更新模板（纯排版差异不更新）；一律不新建
+    run、不整卷重解析、不改封卷状态。历史 run、考试记录、其它卷与题库原始数据
+    保持原样。所有写入单事务。
     """
     paper_id = int(paper["id"])
     run_id = int(paper["run_id"])
@@ -1370,11 +1444,11 @@ def _save_answer_reference(
     base_paper_text = re.sub(r"\{\{\d+\}\}", "____", template).strip()
 
     # 试卷原文改动：仅在空位数量一致时更新模板（保留原空位编号）；结构变化属于
-    # 重封卷，明确拒绝。先算出生效模板，逐空切分用它，用户同步改了固定代码时
-    # 也能正确定位，避免把固定代码差异误判成答案改动。
+    # 重封卷，明确拒绝。比较按去空白键进行 —— 用户只在试卷栏加空行 / 调缩进
+    # 不应触发模板更新，更不能因此把试卷排版强加给右侧答案参考。
     nos = [int(x) for x in re.findall(r"\{\{(\d+)\}\}", template)]
     new_template = None
-    if (paper_text or "").strip() != base_paper_text:
+    if _ws_key(paper_text or "") != _ws_key(base_paper_text):
         if not nos or len(nos) != len(re.findall(r"____", paper_text or "")):
             raise ValueError(
                 "试卷原文的空位数量与当前卷子不一致，已取消保存（原卷未做任何改动）。"
@@ -1388,27 +1462,31 @@ def _save_answer_reference(
     # 原文时，两侧固定代码会暂时不一致；用户把两侧一起改过时则用新模板切分。
     # 两种情况都支持，避免「只改试卷原文就被拒绝」或「固定代码不同步」。
     effective_template = template
-    shown = _extract_blank_values(template, answer_text)
+    loc = _locate_blank_values(template, answer_text)
     split_on_new = False
-    if shown is None and new_template is not None:
-        shown = _extract_blank_values(new_template, answer_text)
-        if shown is not None:
+    if loc is None and new_template is not None:
+        loc = _locate_blank_values(new_template, answer_text)
+        if loc is not None:
             effective_template = new_template
             split_on_new = True
-    if shown is None or set(shown) != set(by_no):
+    if loc is None or set(loc["shown"]) != set(by_no):
         raise ValueError(
-            "答案参考的固定代码与当前卷子无法逐空对应，已取消保存（原卷未做任何改动）。"
+            "答案参考的固定代码文字与当前卷子不一致，已取消保存（原卷未做任何改动）。"
+            "空行分段、缩进与空格调整均已支持，但请只加空行、不要插入新的注释或代码行；"
             "如需增删空位或修改试卷结构，请用「重新上传文件重封卷」。"
         )
+    shown = loc["shown"]
+    tail = loc["tail"]
     # 历史展示副本防护：提交内容里若仍带着 code_filled 的串位值（与权威答案不同、
     # 却与历史副本逐字相同），说明这是旧版编辑页 / 浏览器缓存提交的，不是用户主动
     # 改的空；写回会连带污染其它空（#33 实测只改 B1 会把 B12 也写成串位文本）。
-    historical = _extract_blank_values(effective_template, old_filled) or {}
+    hist_loc = _locate_blank_values(effective_template, old_filled)
+    historical = hist_loc["shown"] if hist_loc else {}
     stale = [
         no for no, val in shown.items()
-        if val.strip() != by_no[no]
-        and historical.get(no, "").strip() == val.strip()
-        and historical.get(no, "").strip() != by_no[no]
+        if _ws_key(val) != _ws_key(by_no[no])
+        and _ws_key(historical.get(no, "")) == _ws_key(val)
+        and _ws_key(historical.get(no, "")) != _ws_key(by_no[no])
     ]
     if stale:
         raise ValueError(
@@ -1416,25 +1494,28 @@ def _save_answer_reference(
             "），已取消保存，原卷未做任何改动。请硬刷新页面（Ctrl+Shift+R）后重新打开"
             "「编辑」，以最新标准答案为基准再修改。"
         )
-    edits = [
-        {"blank_no": no, "raw": shown[no].strip()}
-        for no in sorted(by_no)
-        if shown[no].strip() != by_no[no]
-    ]
 
-    # 安全性闸门：只允许「逐空值替换」+「末尾追加内容」。空位之间被插入新行时，
-    # 切分会把注释连同答案一起算进某个空，写回就会污染标准答案；固定代码被改动
-    # 同理。两类都明确拒绝并给出可操作指引，绝不静默保存成不一致数据。
-    for no, val in shown.items():
-        if any(ch in val and ch not in by_no[no] for ch in ("\n", "\r")):
+    # 逐空比对按「去空白键」判定：空行分段、缩进、逗号后空格的增删都只是排版，
+    # 不写回 blank_checks.filled_raw；只有答案**内容**真变了才产生 edit。
+    # 安全性闸门仍保留，但只拦「插入了带实质内容的新行」这类结构性改动：
+    # 值里含换行且内容已变，说明用户把注释 / 新代码塞进了某个空，写回会污染答案。
+    edits: list[dict] = []
+    for no in sorted(by_no):
+        candidate = shown[no].strip()
+        if _ws_key(candidate) == _ws_key(by_no[no]):
+            continue
+        if any(ch in candidate for ch in ("\n", "\r")):
             raise ValueError(
-                "答案参考里在空位之间插入了新的行，无法安全对应到具体空位，已取消保存"
-                "（原卷未做任何改动）。只改某个空的答案请直接修改该空或用「改答案」入口；"
-                "如需调整试卷结构请用「重新上传文件重封卷」。"
+                "答案参考里在某个空位内插入了带实质内容的新行，无法安全对应到具体空位，"
+                "已取消保存（原卷未做任何改动）。空行分段、缩进与空格调整不受影响；"
+                "只改某个空的答案请直接修改该空或用「改答案」入口。"
             )
+        edits.append({"blank_no": no, "raw": candidate})
     merged = {**by_no, **{e["blank_no"]: e["raw"] for e in edits}}
     rebuilt = core.fill(effective_template, merged)
-    if not answer_text.startswith(rebuilt):
+    # 固定代码文字一致性按去空白键判前缀：用户调整排版不会让这道闸门误伤，
+    # 但改了代码里的任何一个非空白字符仍会被拒绝。
+    if not _ws_key(answer_text).startswith(_ws_key(rebuilt)):
         raise ValueError(
             "答案参考的固定代码与当前卷子模板不一致，已取消保存（原卷未做任何改动）。"
             "如需修改试卷结构，请用「重新上传文件重封卷」。"
@@ -1473,7 +1554,9 @@ def _save_answer_reference(
             # 否则 code_filled 与 code_template 会不一致，刷新回显又会把改动抹掉。
             stored_filled = answer_text
             if new_template is not None and not split_on_new:
-                stored_filled = core.fill(new_template, merged) + answer_text[len(rebuilt):]
+                # tail 由空白容忍定位给出（末尾固定段之后的追加内容），
+                # 不再按 rebuilt 长度切片 —— 用户调整过排版时长度会对不上。
+                stored_filled = core.fill(new_template, merged) + tail
             store.update_code_filled(conn, paper_id, run_id, stored_filled)
             conn.commit()
         except Exception:
