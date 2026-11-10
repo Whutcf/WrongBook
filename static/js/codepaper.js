@@ -63,7 +63,7 @@
     probeMatched: null,   /* 自动匹配的区段下标，用于「接受自动匹配」时走快速提交通道 */
     llmEnabled: false,    /* 解析方式唯一真值：粘贴 / 上传 / 编辑保存共用，两处开关只是它的视图 */
     llmChannel: {         /* ok: null=读取中 / true=通道可用 / false=未启用或读取失败 */
-      ok: null, label: "", text: "正在读取「整卷解析大模型」配置…"
+      ok: null, label: ""
     }
   };
   var CURRENT_RUN_ID = null;
@@ -237,53 +237,34 @@
   });
 
   /* ------------------------------------------------------------------
-     解析方式：一个真值、两个视图、三层信息
-     · 通道状态 = 设置里「② 整卷解析大模型」是否可用（只读事实）
-     · 开关     = 本次录入是否允许模型介入（粘贴 / 上传 / 编辑保存共用）
-     · 状态徽标 = 现在点解析会发生什么
-     旧版把通道可用性写成「整卷解析大模型已启用」，开关明明是关的却读成已启用；
-     打开开关后还会冒出第二个「用模型辅助解析」按钮，像是要点两次才生效。
-     更糟的是主解析按钮恒传 use_llm:false，开关对粘贴录入其实完全不起作用。
+     解析方式：S.llmEnabled 是唯一真值，两个开关只是它的两个视图。
+     整页不设说明区、不写通道配置介绍：开 = 接模型，关 = 纯规则；
+     只在通道不可用时浮出一行短提示。提交逻辑一律只读 #cpUseLlm。
      ------------------------------------------------------------------ */
   function llmOn() { return !!S.llmEnabled && S.llmChannel.ok !== false; }
 
-  function modeText(full) {
-    if (!llmOn()) return "当前：纯规则 · 完全离线";
-    return full && S.llmChannel.label
-      ? "当前：模型辅助 · " + S.llmChannel.label
-      : "当前：模型辅助";
-  }
-
-  /* 上传解析的等待文案不再无条件写「大模型处理中」：离线时明说离线。 */
   function parseWaitTip(base) {
-    return base + (llmOn()
-      ? "（模型辅助已开启，可能需要等待模型返回）"
-      : "（纯规则离线解析）") + "，请稍候，勿关闭页面…";
+    return base + "，请稍候，勿关闭页面…";
   }
 
   /* 两个复选框只是同一份状态的两个视图：任何一处改动都同步回另一处，
-     所有提交逻辑仍只读 #cpUseLlm，杜绝多真值漂移。 */
+     所有提交逻辑仍只读 #cpUseLlm，杜绝多真值漂移。
+     页面常态零文案；只有通道不可用时才浮出一行短提示。 */
   function renderLlmMode() {
     var on = llmOn();
-    var bar = $("cpModeBar");
-    if (bar) bar.classList.toggle("is-llm", on);
     $$("[data-cp-llm-toggle]").forEach(function (box) {
       box.checked = !!S.llmEnabled;
       box.disabled = S.llmChannel.ok === false;
       var wrap = box.closest ? box.closest(".cp-switch") : null;
-      if (wrap) wrap.classList.toggle("is-disabled", box.disabled);
+      if (wrap) {
+        wrap.classList.toggle("is-disabled", box.disabled);
+        wrap.classList.toggle("is-on", on);
+      }
     });
-    var state = $("cpLlmStateText");
-    if (state) state.textContent = modeText(true);
-    var ctl = $("cpControlMode");
-    if (ctl) { ctl.textContent = modeText(false); ctl.classList.toggle("is-llm", on); }
-    var up = $("cpUploadLlmState");
-    if (up) { up.textContent = modeText(false); up.classList.toggle("is-llm", on); }
-    var ch = $("cpLlmChannel");
-    if (ch) {
-      ch.textContent = S.llmChannel.text;
-      ch.classList.toggle("is-warn", S.llmChannel.ok === false);
-    }
+    ["cpLlmWarn", "cpLlmWarnUpload"].forEach(function (id) {
+      var note = $(id);
+      if (note) note.hidden = S.llmChannel.ok !== false;
+    });
   }
 
   function setLlmEnabled(on) {
@@ -293,28 +274,18 @@
   }
 
   /* 录入页打开时刷新一次 parse 通道配置（与图片识别 OCR 通道互不相通）。
-     刷新期间沿用上一次已知状态，避免开关与徽标来回闪一下。 */
+     只判断「能不能用」，不把通道详情写到页面上；读取期间沿用上次状态避免闪烁。 */
   function loadLlmStatus() {
     var previous = S.llmChannel || {};
-    S.llmChannel = {
-      ok: previous.ok === true ? true : null,
-      label: previous.label || "",
-      text: "正在读取「整卷解析大模型」配置…"
-    };
+    S.llmChannel = { ok: previous.ok === true ? true : null, label: previous.label || "" };
     renderLlmMode();
     api("/api/llm/config?scope=parse").then(function (d) {
       var ok = !!(d && d.enabled && d.active_label && d.active_label !== "--");
-      S.llmChannel = ok
-        ? { ok: true, label: d.active_label,
-            text: "通道已配置：" + d.active_label +
-                  "（设置 → 大模型 → ② 整卷解析大模型）。这是「能不能用」；下方开关决定「这次用不用」。" }
-        : { ok: false, label: "",
-            text: "「整卷解析大模型」通道尚未启用：开关暂不可用，本次一律纯规则离线解析。请到「设置 → 大模型 → ② 整卷解析大模型」添加模型并启用。" };
+      S.llmChannel = ok ? { ok: true, label: d.active_label } : { ok: false, label: "" };
       if (!ok) S.llmEnabled = false;
       renderLlmMode();
     }).catch(function () {
-      S.llmChannel = { ok: false, label: "",
-        text: "无法读取模型配置（服务离线？）：本次先按纯规则离线解析，不影响入库。" };
+      S.llmChannel = { ok: false, label: "" };
       S.llmEnabled = false;
       renderLlmMode();
     });
@@ -2999,8 +2970,7 @@
   }
 
   /* 首次进入：拉卷库；页面本来就是 shelf 页签，不重复切换。
-     解析方式状态也在此时初始化一次 —— 旧版只在「切到录入页签」时才读配置，
-     直接打开录入页会一直停在「读取模型配置中…」。 */
+     解析方式状态也在此初始化一次，避免直接打开录入页时开关状态滞后。 */
   loadPapers();
   loadLlmStatus();
 

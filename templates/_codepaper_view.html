@@ -90,34 +90,8 @@
         </label>
       </div>
 
-      <!-- 解析方式：粘贴录入与文件上传共用「同一份」开关状态（S.llmEnabled）。
-           旧版把开关塞在手动编辑动作行下方，旁边却写「整卷解析大模型已启用」——
-           那句话描述的是设置里的通道是否可用，和开关本身开没开正好相反；
-           打开开关后还会凭空多出第二个「用模型辅助解析」按钮，像是要点两次。
-           现在拆成三层：通道状态（只读事实） / 本次开关（唯一动作） / 当前解析方式（结果）。 -->
-      <section class="cp-mode-bar" id="cpModeBar" aria-labelledby="cpModeHeading">
-        <div class="cp-mode-lead">
-          <span class="cp-mode-eyebrow">PARSING MODE <i>/</i> 解析方式</span>
-          <h4 id="cpModeHeading">这次录入，用哪种引擎？</h4>
-          <p>下方粘贴录入与文件上传<strong>共用同一个设置</strong>。纯规则解析完全离线；开启模型辅助后，也只在规则没找齐答案时补齐缺失空，找齐则零调用。</p>
-        </div>
-        <div class="cp-mode-control">
-          <label class="cp-switch cp-switch--mode" title="控制本次录入是否允许模型介入；粘贴、上传、编辑保存共用，与设置里的通道是否可用是两回事">
-            <input type="checkbox" id="cpUseLlm" data-cp-llm-toggle>
-            <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
-            <span class="cp-switch-text">启用大模型辅助</span>
-          </label>
-          <span class="cp-mode-state" id="cpLlmState" role="status" aria-live="polite">
-            <span class="cp-mode-state-dot" aria-hidden="true"></span>
-            <span id="cpLlmStateText">当前：纯规则 · 完全离线</span>
-          </span>
-        </div>
-        <div class="cp-mode-foot">
-          <span class="cp-mode-channel" id="cpLlmChannel" role="status" aria-live="polite">正在读取「整卷解析大模型」配置…</span>
-          <button type="button" class="cp-link-btn cp-mode-settings" data-view="settings">配置模型 ↗</button>
-        </div>
-      </section>
-
+      <!-- 解析方式不设独立说明区：开关并入下方动作行与上传卡片头部，
+           两处由 S.llmEnabled 同步，提交逻辑一律只读 #cpUseLlm。 -->
       <div class="cp-papers">
         <div class="cp-paper">
           <div class="cp-paper-tab"><span class="cp-dot" aria-hidden="true"></span>空白试卷<small>BLANK PAPER</small></div>
@@ -141,7 +115,12 @@
         <button id="cpBtnParse" class="btn btn-primary cp-btn" type="button">解析并封卷入库</button>
         <button id="cpBtnClear" class="btn btn-ghost cp-btn" type="button">清空</button>
         <button id="cpBtnAbort" class="btn cp-btn cp-btn-abort" type="button" hidden>终止调用</button>
-        <span class="cp-control-mode" id="cpControlMode">当前：纯规则 · 完全离线</span>
+        <label class="cp-switch cp-switch--pill" id="cpLlmToggle">
+          <input type="checkbox" id="cpUseLlm" data-cp-llm-toggle aria-label="启用大模型辅助">
+          <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
+          <span class="cp-switch-text">启用大模型辅助</span>
+        </label>
+        <span class="cp-llm-warn" id="cpLlmWarn" role="status" aria-live="polite" hidden>未配置模型 · <button type="button" class="cp-link-btn" data-view="settings">去设置 ↗</button></span>
       </div>
       <p class="cp-tip" id="cpTip" role="status" aria-live="polite">填写两侧内容后，点「解析并封卷入库」即可。</p>
 
@@ -153,18 +132,13 @@
             <h4>上传两份文件录入</h4>
             <p>和左侧粘贴二选一即可：选好<strong>试卷文件</strong>与<strong>答案文件</strong>各一份，系统自动识别空位、对齐答案并封卷入库。</p>
           </div>
-          <!-- 上传入口内的同一开关（镜像）：不必滚回上方也能开启模型辅助。
-               两处复选框由 renderLlmMode() 双向同步，提交逻辑只读 #cpUseLlm。 -->
-          <div class="cp-upload-mode" aria-label="本次上传的解析方式">
-            <span class="cp-upload-mode-label">PARSING MODE</span>
-            <label class="cp-switch cp-switch--mode cp-switch--compact" title="与上方「解析方式」同步：两种录入方式共用同一个开关">
-              <input type="checkbox" id="cpUseLlmUpload" data-cp-llm-toggle>
-              <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
-              <span class="cp-switch-text">启用大模型辅助</span>
-            </label>
-            <span class="cp-upload-mode-state" id="cpUploadLlmState">当前：纯规则 · 完全离线</span>
-            <span class="cp-upload-mode-sync">与上方设置同步</span>
-          </div>
+          <!-- 上传入口内的同一开关（镜像）：两处由 renderLlmMode() 同步，提交逻辑只读 #cpUseLlm。 -->
+          <label class="cp-switch cp-switch--pill cp-switch--upload" id="cpLlmToggleUpload">
+            <input type="checkbox" id="cpUseLlmUpload" data-cp-llm-toggle aria-label="启用大模型辅助（文件上传）">
+            <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
+            <span class="cp-switch-text">启用大模型辅助</span>
+          </label>
+          <span class="cp-llm-warn cp-llm-warn--upload" id="cpLlmWarnUpload" role="status" aria-live="polite" hidden>未配置模型 · <button type="button" class="cp-link-btn" data-view="settings">去设置 ↗</button></span>
         </div>
 
         <div class="cp-format-guide" aria-label="上传文件支持的格式范围">
