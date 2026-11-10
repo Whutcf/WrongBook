@@ -2085,12 +2085,14 @@
   $("cpBtnUpload").addEventListener("click", function () {
     var p = $("cpFpaper").files[0], a = $("cpFanswer").files[0];
     if (!p || !a) { setTip("请同时选择试卷文件与答案文件。", "error"); return; }
-    // 编辑模式：直接用新文件覆盖更新当前卷，不新增
-    if (S.editingPaperId) {
-      startUploadPersist(p, a);
-      return;
-    }
-    // 非编辑模式：先按上传文件名查重，若已存在则提示「是否重新解析并更新」
+    /* 每次上传都按「实际选中的两份文件」重新查重，并以查重结果决定目标卷——
+       不再沿用之前编辑遗留的 S.editingPaperId。否则若上一次编辑的卷子已变动 / 删除，
+       会盲目把旧 id 当 paper_id 传给 /persist，导致「要更新的卷子不存在」，
+       或在 id 仍指向别的卷时静默覆盖错卷。 */
+    S.editingPaperId = null;
+    S.intakePaperId = null;
+    syncUploadBtn();
+    // 先按上传文件名查重，若已存在则提示「是否重新解析并更新」
     setTip("正在核对上传文件是否重复…", "info");
     api("/api/code-papers/papers/by-file?paper_file=" + encodeURIComponent(p.name) +
         "&answer_file=" + encodeURIComponent(a.name))

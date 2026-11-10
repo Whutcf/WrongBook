@@ -151,6 +151,18 @@ def _looks_like_real_name(s: str) -> bool:
     return True
 
 
+_PURE_NUM_RE = re.compile(r"^\s*\d+(?:\.\d+)*\s*$")
+
+
+def _is_degenerate_title(t: str) -> bool:
+    """标题是否退化（空 / 纯编号，如「1.1.5」）。
+
+    退化标题来自文件名编号兜底，不是真实试卷名。覆盖更新既有卷时若派生出这种标题，
+    不应拿它覆盖掉已有的正确名称（否则会触发「仅识别到编号，未在答案文件中匹配到完整名称」）。"""
+    t = (t or "").strip()
+    return (not t) or bool(_PURE_NUM_RE.match(t))
+
+
 def _derive_paper_title(split_secs: list, matched_section: int, paper_doc: Any, stem: str,
                         title_index: dict | None = None, answer_doc: Any = None) -> str:
     """从答案内容里挑出最像试卷名的标题，优先级：
@@ -746,10 +758,42 @@ def persist_cached():
             pid = int(paper_id_field)
             paper = store.get_paper(conn, pid)
             if paper is None:
-                return jsonify({"ok": False, "error": "要更新的卷子不存在"}), 404
+                # 自愈：前端可能传入失效 / 错误的 paper_id（如旧编辑态遗留的 id、
+                # 或该卷已被删除）。按解析缓存里的真实试卷文件名回退查重，命中则覆盖该卷；
+                # 仍找不到则降级为「新增」，绝不直接 404 让用户卡死在「卷子不存在」。
+                fb = None
+                fb_pf = entry.get("paper_file") or ""
+                if fb_pf:
+                    fb = store.find_paper_by_file(
+                        conn, fb_pf, entry.get("answer_file") or ""
+                    )
+                if fb:
+                    pid = int(fb["id"])
+                    paper = store.get_paper(conn, pid)
+            if paper is None:
+                # 降级新增：无法定位到任何既有卷，作为新卷入库
+                target_id = store.create_paper(
+                    conn,
+                    title=entry.get("title") or "整卷入库",
+                    paper_file=entry.get("paper_file") or "",
+                    answer_file=entry.get("answer_file") or "",
+                    answer_path=entry.get("answer_path") or "",
+                    answer_regions=json.dumps(entry.get("answer_regions") or [], ensure_ascii=False),
+                    language=entry.get("language") or "python",
+                )
+                run_id = store.save_result(conn, target_id, entry["result"])
+                return jsonify({"ok": True, "paper_id": target_id, "run_id": run_id, "auto_new": True})
+            # 覆盖更新既有卷：若本次派生出的标题退化成纯编号/空（如重新上传时编号兜底），
+            # 不要拿它覆盖掉卷子已有的正确名称，避免名称回退成「1.1.5」并触发匹配不到的警告。
+            _incoming_title = entry.get("title") or ""
+            _existing_title = (paper.get("title") or "") if paper else ""
+            if paper and _is_degenerate_title(_incoming_title) and _existing_title:
+                _final_title = _existing_title
+            else:
+                _final_title = _incoming_title or _existing_title or "整卷入库"
             store.update_paper_full(
                 conn, pid,
-                title=entry.get("title") or "整卷入库",
+                title=_final_title,
                 language=entry.get("language") or "python",
                 paper_file=entry.get("paper_file") or "",
                 answer_file=entry.get("answer_file") or "",
