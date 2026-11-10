@@ -20,7 +20,6 @@ data/
 app.log
 server.log
 startup.log
-selftest.*
 
 # ===== 构建产物 =====
 /build_output/
