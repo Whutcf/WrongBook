@@ -746,7 +746,31 @@ def persist_cached():
             pid = int(paper_id_field)
             paper = store.get_paper(conn, pid)
             if paper is None:
-                return jsonify({"ok": False, "error": "要更新的卷子不存在"}), 404
+                # 自愈：前端可能传入失效 / 错误的 paper_id（如旧编辑态遗留的 id、
+                # 或该卷已被删除）。按解析缓存里的真实试卷文件名回退查重，命中则覆盖该卷；
+                # 仍找不到则降级为「新增」，绝不直接 404 让用户卡死在「卷子不存在」。
+                fb = None
+                fb_pf = entry.get("paper_file") or ""
+                if fb_pf:
+                    fb = store.find_paper_by_file(
+                        conn, fb_pf, entry.get("answer_file") or ""
+                    )
+                if fb:
+                    pid = int(fb["id"])
+                    paper = store.get_paper(conn, pid)
+            if paper is None:
+                # 降级新增：无法定位到任何既有卷，作为新卷入库
+                target_id = store.create_paper(
+                    conn,
+                    title=entry.get("title") or "整卷入库",
+                    paper_file=entry.get("paper_file") or "",
+                    answer_file=entry.get("answer_file") or "",
+                    answer_path=entry.get("answer_path") or "",
+                    answer_regions=json.dumps(entry.get("answer_regions") or [], ensure_ascii=False),
+                    language=entry.get("language") or "python",
+                )
+                run_id = store.save_result(conn, target_id, entry["result"])
+                return jsonify({"ok": True, "paper_id": target_id, "run_id": run_id, "auto_new": True})
             store.update_paper_full(
                 conn, pid,
                 title=entry.get("title") or "整卷入库",
