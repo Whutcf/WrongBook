@@ -330,6 +330,12 @@ def save_result(conn: sqlite3.Connection, paper_id: int, result: PaperResult) ->
             paper_id,
         ),
     )
+    # 重新封卷会写入新的 run，标准答案可能已变：按最新答案键重判该卷所有历史
+    # 考试记录（correct / score / passed / detail）并落库。否则「整卷历史」「学习统计」
+    # 与题库卡片仍读旧的缓存分数，只有详情接口实时重判能看到新答案。
+    # 放在 save_result 这一公共落库点，覆盖全部重封卷入口（编辑保存 / 重新上传文件 /
+    # 探针缓存落库），语义与 update_blank_answers 的刷新保持一致；新建卷无历史记录，空操作。
+    recompute_attempt_scores(conn, paper_id)
     conn.commit()
     return run_id
 

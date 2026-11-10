@@ -1680,6 +1680,13 @@
 
   function switchView(view, options = {}) {
     if (!VIEW_META[view]) view = "dashboard";
+    // 「整卷历史」的返回目标统一在这里、以「切换前」的视图为准记录。
+    // 以前放在全局点击委托里：统计表「历史」按钮自己先调了一次 switchView，
+    // 等事件冒泡到委托时 state.view 已变成 codeHistory，返回目标被记成自身，
+    // 于是「返回」原地不动、回不到学习统计。题库按钮没有自有监听，所以一直正常。
+    if (view === "codeHistory" && state.view !== "codeHistory" && VIEW_META[state.view]) {
+      codeHistoryReturnView = state.view;
+    }
     // 换页面时把还开着的弹窗收干净：否则上一页的列表会留在屏幕上，
     // 原图查看器的「返回列表」也会指回一个早就过期的列表。
     if (view !== state.view) closeAllModals();
@@ -5129,9 +5136,8 @@
               <span class="paper-by-go"><button type="button" class="btn btn-ghost btn-xs" data-view="codeHistory" data-ch-paper="${p.paper_id}">历史</button></span>
             </div>`;
           }).join("");
-          byBox.querySelectorAll(".paper-by-go .btn").forEach((b) => {
-            b.addEventListener("click", () => switchView("codeHistory", { chPaper: b.dataset.chPaper }));
-          });
+          // 不在这里另绑 click：按钮已带 data-view="codeHistory" / data-ch-paper，
+          // 统一交给上面的全局委托 + switchView，返回目标才会记成「学习统计」。
         }
       }
     } catch (_error) {
@@ -5144,6 +5150,18 @@
   let codeHistoryReturnView = "library";
   const codeHistoryReturnLabel = { library: "题库", stats: "学习统计", practice: "练习", wrong: "错题本", dashboard: "概览" };
   const codeHistoryState = { mode: "all", paperId: "", paperQuery: "", page: 1, pageSize: 12, items: [], papers: [], bound: false };
+
+  // 编辑重封卷保存成功后由 codepaper.js 通过 window.appUI 调用：后端已按最新答案
+  // 重判该卷的历史考试记录，这里同步作废旧缓存并刷新当前视图，确保「整卷历史 /
+  // 学习统计 / 题库卡片」展示最新数据，而不是上一次进入页面时缓存的旧分数。
+  function refreshPaperViews(paperId) {
+    codeHistoryState.items = [];
+    codeHistoryState.papers = [];
+    if (state.view === "codeHistory") loadCodeHistory({ reset: true, paperId });
+    else if (state.view === "stats") loadStats();
+    else if (state.view === "library") loadLibrary();
+    refreshOverview();
+  }
 
   // 模糊匹配：子串命中优先，其次按顺序子序列命中（适配中文）
   function fuzzyMatch(q, text) {
@@ -7496,10 +7514,9 @@
       if (viewButton) {
         event.preventDefault();
         const opts = {};
-        if (viewButton.dataset.view === "codeHistory") {
-          // 记住从哪个页面点进来（题库 / 学习统计 …），「返回」按钮按它回退
-          codeHistoryReturnView = state.view || "library";
-          if (viewButton.dataset.chPaper) opts.chPaper = viewButton.dataset.chPaper;
+        if (viewButton.dataset.view === "codeHistory" && viewButton.dataset.chPaper) {
+          // 来源页由 switchView 统一记录，这里只透传「按试卷过滤」参数
+          opts.chPaper = viewButton.dataset.chPaper;
         }
         switchView(viewButton.dataset.view, opts);
         return;
@@ -7806,5 +7823,5 @@
   // 整卷模块（static/js/codepaper.js）是另一个独立 IIFE，访问不到本文件作用域
   // 里的弹窗 / 提示函数。历史上「定向重解析」直接裸调用 openModal 会抛
   // ReferenceError 而毫无反应。这里显式挂一个桥接对象供它复用主站弹窗层。
-  window.appUI = { openModal, closeModal, showToast, confirmDialog, switchView };
+  window.appUI = { openModal, closeModal, showToast, confirmDialog, switchView, refreshPaperViews };
 })();

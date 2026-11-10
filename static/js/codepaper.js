@@ -737,6 +737,9 @@
 
   /* 解析 / 入库成功后的统一回执：落库成功与「凭 token 直接落库」共用，保证回执一致 */
   function runParseSuccess(d, btn) {
+    /* 编辑重封卷（S.editingPaperId 非空）保存成功后，需通知主站刷新该卷的关联历史数据；
+       本函数稍后会把它清空，所以先留一份。新增卷为 null，不触发。 */
+    var editedPaperId = S.editingPaperId;
     if (btn) {
       btn.disabled = false;
       btn.classList.remove("is-loading");
@@ -762,6 +765,12 @@
     showResult(fromParse(d.result || {}), d.llm_notes || []);
     loadPapers();
     setTip("已封卷入库，去「我的题库」即可开考。", "ok");
+    /* 编辑重封卷保存成功后，主站侧同步刷新与该卷关联的历史 / 统计视图：
+       后端已按最新答案重判历史考试记录，这里作废旧缓存并重新拉取，
+       避免「整卷历史 / 学习统计 / 题库卡片」继续展示旧分数与旧答案。 */
+    if (editedPaperId && window.appUI && typeof window.appUI.refreshPaperViews === "function") {
+      try { window.appUI.refreshPaperViews(editedPaperId); } catch (e) { /* 不影响保存回执 */ }
+    }
     // 解析完成自动滚到下方「确认 / 考试」回执，免得还要手动滑到底（尊重减弱动效偏好）
     var rep = $("cpIntakeReport");
     if (rep) {
