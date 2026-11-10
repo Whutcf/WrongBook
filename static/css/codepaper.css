@@ -731,8 +731,53 @@
 .cp-embed tr.cp-b-row > td.cp-b { padding-left: 12px; }
 .cp-reparse-form { display: flex; flex-direction: column; gap: 14px; }
 .cp-reparse-target { display: flex; gap: 8px; align-items: center; }
-.cp-reparse-target .rp-type { height: 34px; }
-.cp-reparse-target .rp-val { width: 96px; height: 34px; }
+/* 弹窗挂在 #modalRoot（不在 .cp-embed 内），以下规则不加 .cp-embed 前缀。
+   统一对话框内所有输入框（下拉 / 数字 / 文本域）与全站 .field 输入控件同款令牌，
+   覆盖浏览器默认（textarea 的黑色粗边框、直角）以保证视觉一致。 */
+.cp-reparse-form .rp-type,
+.cp-reparse-form .rp-val,
+.cp-reparse-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 9px 11px;
+  color: var(--ink);
+  font: 500 11.5px/1.45 var(--font-ui, system-ui);
+  outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+/* 目标行：下拉可伸缩、空号固定宽度，二者保持一行横排 */
+.cp-reparse-target .rp-type { width: auto; flex: 1 1 auto; height: 34px; padding: 0 11px; }
+.cp-reparse-target .rp-val { width: 96px; flex: none; height: 34px; padding: 0 11px; }
+/* 文本域可纵向拉伸，与全站 .field textarea 对齐 */
+.cp-reparse-form textarea { resize: vertical; min-height: 92px; line-height: 1.65; }
+.cp-reparse-form textarea::placeholder { color: var(--muted-2, #9a948a); }
+/* 交互状态：悬停 / 聚焦 / 禁用 / 报错，统一呈现 */
+.cp-reparse-form .rp-type:hover:not(:focus):not(:disabled),
+.cp-reparse-form .rp-val:hover:not(:focus):not(:disabled),
+.cp-reparse-form textarea:hover:not(:focus):not(:disabled) { border-color: var(--line-strong); }
+.cp-reparse-form .rp-type:focus,
+.cp-reparse-form .rp-val:focus,
+.cp-reparse-form textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .12);
+}
+.cp-reparse-form .rp-type:disabled,
+.cp-reparse-form .rp-val:disabled,
+.cp-reparse-form textarea:disabled {
+  background: var(--surface-2, #f3efe7);
+  color: var(--muted-2, #9a948a);
+  cursor: not-allowed;
+  border-color: var(--line);
+}
+.cp-reparse-form .rp-type.is-error,
+.cp-reparse-form .rp-val.is-error,
+.cp-reparse-form textarea.is-error {
+  border-color: var(--red, #c0392b);
+  box-shadow: 0 0 0 3px var(--red-soft, #fbefeb);
+}
 .cp-reparse-hint { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 0; }
 /* 弹窗挂在 #modalRoot（不在 .cp-embed 内），以下规则不加 .cp-embed 前缀 */
 .cp-reparse-current {

@@ -2002,11 +2002,14 @@
     typeSel.addEventListener("change", function () {
       if (typeSel.value === "line") { valInput.value = ""; valInput.placeholder = "原卷行号"; }
       else { valInput.value = no || 1; valInput.placeholder = "空号"; }
+      valInput.classList.remove("is-error");
     });
+    valInput.addEventListener("input", function () { valInput.classList.remove("is-error"); });
 
     function fail(msg) {
       go.disabled = false; go.textContent = "重调并回写";
       errBox.textContent = msg; errBox.hidden = false;
+      valInput.classList.add("is-error");
     }
     function done(msg, kind) {
       closeModal(false);
