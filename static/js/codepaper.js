@@ -238,8 +238,8 @@
 
   /* ------------------------------------------------------------------
      解析方式：S.llmEnabled 是唯一真值，两个开关只是它的两个视图。
-     整页不设说明区、不写通道配置介绍：开 = 接模型，关 = 纯规则；
-     只在通道不可用时浮出一行短提示。提交逻辑一律只读 #cpUseLlm。
+     整页不设说明区：开 = 接模型，关 = 纯规则；配置状态只作为一枚 chip
+     贴在开关前方。提交逻辑一律只读 #cpUseLlm。
      ------------------------------------------------------------------ */
   function llmOn() { return !!S.llmEnabled && S.llmChannel.ok !== false; }
 
@@ -249,7 +249,7 @@
 
   /* 两个复选框只是同一份状态的两个视图：任何一处改动都同步回另一处，
      所有提交逻辑仍只读 #cpUseLlm，杜绝多真值漂移。
-     页面常态零文案；只有通道不可用时才浮出一行短提示。 */
+     配置状态只占开关前方一枚 chip，不另起一行。 */
   function renderLlmMode() {
     var on = llmOn();
     $$("[data-cp-llm-toggle]").forEach(function (box) {
@@ -261,9 +261,17 @@
         wrap.classList.toggle("is-on", on);
       }
     });
-    ["cpLlmWarn", "cpLlmWarnUpload"].forEach(function (id) {
-      var note = $(id);
-      if (note) note.hidden = S.llmChannel.ok !== false;
+    /* 已配置 → 只显示模型名；未配置 → 「未配置模型 · 去设置 ↗」；
+       读取中（ok === null）整枚 chip 隐藏，不闪占位文字。 */
+    $$("[data-cp-llm-chip]").forEach(function (chip) {
+      var txt = chip.querySelector(".cp-llm-chip-text");
+      var link = chip.querySelector(".cp-llm-chip-link");
+      var ok = S.llmChannel.ok;
+      chip.hidden = ok === null;
+      chip.classList.toggle("is-ready", ok === true);
+      chip.classList.toggle("is-warn", ok === false);
+      if (txt) txt.textContent = ok === true ? (S.llmChannel.label || "模型已就绪") : "未配置模型 ·";
+      if (link) link.hidden = ok !== false;
     });
   }
 
@@ -274,7 +282,7 @@
   }
 
   /* 录入页打开时刷新一次 parse 通道配置（与图片识别 OCR 通道互不相通）。
-     只判断「能不能用」，不把通道详情写到页面上；读取期间沿用上次状态避免闪烁。 */
+     只判断「能不能用」，并把生效模型名写进 chip；读取期间沿用上次状态避免闪烁。 */
   function loadLlmStatus() {
     var previous = S.llmChannel || {};
     S.llmChannel = { ok: previous.ok === true ? true : null, label: previous.label || "" };
@@ -290,6 +298,31 @@
       renderLlmMode();
     });
   }
+
+  /* ------------------------------------------------------------------
+     配置变更实时刷新
+     旧版只在初始化与「切到录入页签」时读一次 parse 通道：设置页保存后
+     只刷新自己的 DOM，切回整卷录入又不会触发 switchTab("intake")，
+     缓存里的 ok:false 一直没更新，于是开关永远置灰。
+     现在：设置页写配置成功广播 llm:config-changed；切回整卷录入派发
+     cp:view-enter；窗口重新可见再兜底一次。统一 1.2s 节流避免重复请求。
+     ------------------------------------------------------------------ */
+  var lastLlmRefresh = 0;
+  function refreshLlmStatus() {
+    var now = Date.now();
+    if (now - lastLlmRefresh < 1200) return;
+    lastLlmRefresh = now;
+    loadLlmStatus();
+  }
+  window.addEventListener("llm:config-changed", function (ev) {
+    var scope = ev && ev.detail && ev.detail.scope;
+    if (scope && scope !== "parse") return;
+    refreshLlmStatus();
+  });
+  window.addEventListener("cp:view-enter", refreshLlmStatus);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) refreshLlmStatus();
+  });
 
   /* ------------------------------------------------------------------
      质检渲染（第 02 页签）：入库前确认答案参考有没有把卷子填对
@@ -1760,7 +1793,7 @@
   function switchTab(name, silentAudit) {
     S.tab = name;
     setTip(TAB_NOTE[name] || "");
-    if (name === "intake") loadLlmStatus();
+    if (name === "intake") refreshLlmStatus();
     $$(".cp-tab").forEach(function (b) {
       var on = b.dataset.cpTab === name;
       b.classList.toggle("is-active", on);

@@ -115,12 +115,19 @@
         <button id="cpBtnParse" class="btn btn-primary cp-btn" type="button">解析并封卷入库</button>
         <button id="cpBtnClear" class="btn btn-ghost cp-btn" type="button">清空</button>
         <button id="cpBtnAbort" class="btn cp-btn cp-btn-abort" type="button" hidden>终止调用</button>
-        <label class="cp-switch cp-switch--pill" id="cpLlmToggle">
-          <input type="checkbox" id="cpUseLlm" data-cp-llm-toggle aria-label="启用大模型辅助">
-          <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
-          <span class="cp-switch-text">启用大模型辅助</span>
-        </label>
-        <span class="cp-llm-warn" id="cpLlmWarn" role="status" aria-live="polite" hidden>未配置模型 · <button type="button" class="cp-link-btn" data-view="settings">去设置 ↗</button></span>
+        <div class="cp-llm-group">
+          <!-- 状态 chip 在开关前方：配置好了只显示模型名；未配置才给一行短提示 + 设置入口。
+               旧版是开关下方 flex-basis:100% 的独立行，既占高度又看不见模型名。 -->
+          <span class="cp-llm-chip" id="cpLlmChip" data-cp-llm-chip role="status" aria-live="polite" hidden>
+            <span class="cp-llm-chip-text">未配置模型 ·</span>
+            <button type="button" class="cp-link-btn cp-llm-chip-link" data-view="settings" hidden>去设置 ↗</button>
+          </span>
+          <label class="cp-switch cp-switch--pill" id="cpLlmToggle">
+            <input type="checkbox" id="cpUseLlm" data-cp-llm-toggle aria-label="启用大模型辅助">
+            <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
+            <span class="cp-switch-text">启用大模型辅助</span>
+          </label>
+        </div>
       </div>
       <p class="cp-tip" id="cpTip" role="status" aria-live="polite">填写两侧内容后，点「解析并封卷入库」即可。</p>
 
@@ -133,12 +140,17 @@
             <p>和左侧粘贴二选一即可：选好<strong>试卷文件</strong>与<strong>答案文件</strong>各一份，系统自动识别空位、对齐答案并封卷入库。</p>
           </div>
           <!-- 上传入口内的同一开关（镜像）：两处由 renderLlmMode() 同步，提交逻辑只读 #cpUseLlm。 -->
-          <label class="cp-switch cp-switch--pill cp-switch--upload" id="cpLlmToggleUpload">
-            <input type="checkbox" id="cpUseLlmUpload" data-cp-llm-toggle aria-label="启用大模型辅助（文件上传）">
-            <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
-            <span class="cp-switch-text">启用大模型辅助</span>
-          </label>
-          <span class="cp-llm-warn cp-llm-warn--upload" id="cpLlmWarnUpload" role="status" aria-live="polite" hidden>未配置模型 · <button type="button" class="cp-link-btn" data-view="settings">去设置 ↗</button></span>
+          <div class="cp-llm-group cp-llm-group--upload">
+            <span class="cp-llm-chip" id="cpLlmChipUpload" data-cp-llm-chip role="status" aria-live="polite" hidden>
+              <span class="cp-llm-chip-text">未配置模型 ·</span>
+              <button type="button" class="cp-link-btn cp-llm-chip-link" data-view="settings" hidden>去设置 ↗</button>
+            </span>
+            <label class="cp-switch cp-switch--pill cp-switch--upload" id="cpLlmToggleUpload">
+              <input type="checkbox" id="cpUseLlmUpload" data-cp-llm-toggle aria-label="启用大模型辅助（文件上传）">
+              <span class="cp-switch-track" aria-hidden="true"><span class="cp-switch-thumb"></span></span>
+              <span class="cp-switch-text">启用大模型辅助</span>
+            </label>
+          </div>
         </div>
 
         <div class="cp-format-guide" aria-label="上传文件支持的格式范围">

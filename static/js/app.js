@@ -1707,6 +1707,8 @@
 
     // 进这些页面时强制校验一次标签指纹：服务端有新标签就会立刻换掉缓存
     if (["library", "practice", "stats", "wrong"].includes(view)) loadTags(true);
+    // 切回整卷录入时通知独立模块重拉一次 parse 通道配置（兜底）
+    if (view === "codepaper") window.dispatchEvent(new CustomEvent("cp:view-enter"));
     if (view === "dashboard") loadDashboard();
     if (view === "capture") {
       renderCaptureQueue();
@@ -5734,6 +5736,12 @@
   const LLM_SCOPE_LABEL = { ocr: "图片识别", parse: "整卷解析" };
   let currentLlmScope = "ocr";  // 当前打开的添加/编辑表单属于哪个通道
 
+  // 设置页改了模型配置后广播一次：整卷录入页（另一个独立 IIFE）据此重拉
+  // parse 通道状态，否则在设置里打开开关后回到录入页，开关仍会置灰。
+  function notifyLlmConfigChanged(scope) {
+    window.dispatchEvent(new CustomEvent("llm:config-changed", { detail: { scope: scope || "ocr" } }));
+  }
+
   function llmChannel(scope) {
     return document.querySelector(`.llm-channel[data-llm-scope="${scope}"]`);
   }
@@ -5854,6 +5862,7 @@
       await api(url, { method, body: payload });
       const cfg = await api(`/api/llm/config?scope=${currentLlmScope}`);
       renderLlmChannel(cfg, currentLlmScope);
+      notifyLlmConfigChanged(currentLlmScope);
       $("#llmForm").hidden = true;
       llmEditingId = null;
       showToast(wasEdit ? "模型已更新" : "模型已添加", "success");
@@ -5904,6 +5913,7 @@
     try {
       const data = await api(`/api/llm/enabled?scope=${scope}`, { method: "POST", body: { enabled } });
       renderLlmChannel(data, scope);
+      notifyLlmConfigChanged(scope);
       showToast(enabled ? `已启用${LLM_SCOPE_LABEL[scope] || ""}大模型` : `已关闭${LLM_SCOPE_LABEL[scope] || ""}大模型`, "success");
     } catch (error) {
       btn.checked = previous;
@@ -5917,6 +5927,7 @@
     try {
       const data = await api(`/api/llm/activate/${pid}?scope=${scope}`, { method: "POST" });
       renderLlmChannel(data, scope);
+      notifyLlmConfigChanged(scope);
       showToast("已切换为生效模型", "success");
     } catch (error) {
       showToast(error.message, "error");
@@ -5938,6 +5949,7 @@
     try {
       const data = await api(`/api/llm/profiles/${pid}?scope=${scope}`, { method: "DELETE" });
       renderLlmChannel(data, scope);
+      notifyLlmConfigChanged(scope);
       showToast("模型已删除", "success");
     } catch (error) {
       showToast(error.message, "error");

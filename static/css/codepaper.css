@@ -262,16 +262,40 @@
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   margin-top: 16px;
 }
-/* 操作行：只放动作 + 一枚开关；不设独立说明区，回收的高度全部留给两栏输入框 */
+/* 操作行：动作 + 一组「状态 chip + 开关」；不设独立说明区，高度全留给两栏输入框 */
 .cp-embed .cp-control-row {
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
   margin-top: 14px;
 }
-.cp-embed .cp-control-row .cp-switch--pill { margin-left: auto; }
 
-/* ---------- 04b 解析方式：一枚 pill，两处视图，零说明文案 ----------
-   整页只留「启用大模型辅助」一个控件：开 = 接模型，关 = 纯规则。
-   通道不可用时才浮出一行短提示，平时不占任何垂直空间。 */
+/* ---------- 04b 解析方式：状态前置、一枚开关、零说明文案 ----------
+   整页只有「启用大模型辅助」一个动作控件；配置状态贴在它前方同一行：
+   已配置 → 只显示模型名，未配置 → 「未配置模型 · 去设置 ↗」。
+   不再有独占一行的提示，也不解释通道、额度或规则。 */
+.cp-embed .cp-llm-group {
+  display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none;
+}
+.cp-embed .cp-llm-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 44px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--surface);
+  font-size: 11.5px; color: var(--muted); white-space: nowrap;
+  transition: border-color var(--cp-fast) var(--cp-ease),
+              background-color var(--cp-fast) var(--cp-ease);
+}
+.cp-embed .cp-llm-chip[hidden] { display: none; }
+.cp-embed .cp-llm-chip.is-ready {
+  border-color: var(--cp-ok-line); background: var(--cp-ok-soft); color: var(--cp-ok);
+}
+.cp-embed .cp-llm-chip.is-ready .cp-llm-chip-text::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px;
+  border-radius: 50%; background: currentColor; vertical-align: 2px;
+}
+.cp-embed .cp-llm-chip.is-warn {
+  border-color: var(--cp-accent); background: var(--cp-accent-soft); color: var(--cp-amber-2);
+}
+.cp-embed .cp-llm-chip-link { font-size: 11.5px; padding: 4px 2px; }
+.cp-embed .cp-llm-chip-link[hidden] { display: none; }
 .cp-embed .cp-switch--pill {
   min-height: 44px; padding: 0 14px; gap: 10px; flex: none;
   border: 1px solid var(--line-strong); border-radius: 999px;
@@ -285,19 +309,15 @@
 .cp-embed .cp-switch--pill .cp-switch-text { font-size: 12.5px; }
 .cp-embed .cp-switch.is-disabled { cursor: not-allowed; opacity: .5; }
 .cp-embed .cp-switch.is-disabled .cp-switch-text { color: var(--muted); }
-.cp-embed .cp-upload-head > .cp-switch--pill { margin-left: auto; align-self: center; }
-.cp-embed .cp-llm-warn { flex-basis: 100%; font-size: 11px; color: var(--cp-amber-2); }
-.cp-embed .cp-llm-warn[hidden] { display: none; }
-.cp-embed .cp-llm-warn--upload { margin: 6px 0 0 50px; }
-.cp-embed .cp-llm-warn .cp-link-btn { font-size: 11px; padding: 2px 4px; }
+.cp-embed .cp-upload-head > .cp-llm-group { margin-left: auto; align-self: center; }
 @media (max-width: 900px) {
-  .cp-embed .cp-control-row .cp-switch--pill { margin-left: 0; }
+  .cp-embed .cp-llm-group { margin-left: 0; max-width: 100%; flex-wrap: wrap; }
   .cp-embed .cp-upload-head { flex-wrap: wrap; }
-  .cp-embed .cp-upload-head > .cp-switch--pill { margin-left: 0; }
+  .cp-embed .cp-upload-head > .cp-llm-group { margin-left: 0; }
   .cp-embed .cp-paper textarea { min-height: 300px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cp-embed .cp-switch--pill { transition: none; }
+  .cp-embed .cp-switch--pill, .cp-embed .cp-llm-chip { transition: none; }
 }
 .cp-embed .cp-btn.is-loading::before {
   content: ""; width: 12px; height: 12px; flex: none;
